@@ -56,11 +56,6 @@ export default function ListenPage({
         {recorder && (
           <span className="hidden sm:inline">
             from <span className="text-foliage-deep">{recorder.displayName}</span>
-            {memo.voiceUsedForQuestions !== "kin-narrator" && (
-              <span className="ml-2 text-blush-deep">
-                · in {recorder.displayName}'s voice
-              </span>
-            )}
           </span>
         )}
         <Link
@@ -192,9 +187,7 @@ function Bookplate({
             </p>
           )}
           <p className="type-metadata text-center text-ink-tertiary">
-            {memo.voiceUsedForQuestions === "kin-narrator"
-              ? "Stand-in narrator voice"
-              : "Recorded in their own voice"}
+            Questions read by your browser · answers in {recorderName}&apos;s own voice.
           </p>
         </div>
       </div>

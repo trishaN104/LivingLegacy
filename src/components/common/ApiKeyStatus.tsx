@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 type Status = {
   anthropic: boolean;
   openai: boolean;
-  elevenlabs: boolean;
   demoMode: boolean;
 };
 
@@ -39,9 +38,9 @@ export function ApiKeyStatus({
 
   if (!status) return null;
 
-  const allSet = status.anthropic && status.openai && status.elevenlabs;
+  const allSet = status.anthropic && status.openai;
   const summary = allSet
-    ? "All three provider keys are configured."
+    ? "Both provider keys are configured."
     : status.demoMode
       ? "Demo mode is on — keys aren't required for the seeded demo memo."
       : "Some provider keys are missing.";
@@ -70,11 +69,6 @@ export function ApiKeyStatus({
           on={status.openai}
           purpose="Whisper speech-to-text"
         />
-        <Row
-          label="ELEVENLABS_API_KEY"
-          on={status.elevenlabs}
-          purpose="Voice cloning + cloned-voice playback"
-        />
       </ul>
 
       <div className="mt-md rounded-md bg-surface-elevated p-md">
@@ -86,7 +80,6 @@ export function ApiKeyStatus({
 {`# .env.local
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
-ELEVENLABS_API_KEY=...
 
 # Demo mode short-circuits providers for the seeded memo.
 # Turn it off when you want to record a brand-new memo with live providers.

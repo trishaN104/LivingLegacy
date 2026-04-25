@@ -73,25 +73,10 @@ export const DEMO_CATEGORIES: CategoryTag[] = [
   { slug: `stories-about-${SEED_SUBJECT_IDS.nani}`,          label: "Stories about Grandma", source: "ai" },
 ];
 
-// Audio asset paths under /public/seed/demo-memo/. Files are dropped in by
-// the user in PRE.2; the codebase references them as static URLs.
+// Audio asset paths under /public/seed/demo-memo/. The full playback file
+// holds the recorder's mic capture; interviewer questions are spoken via
+// browser TTS at playback time.
 export const DEMO_AUDIO = {
-  // Recorder-side (Mom hears these in the neutral narrator voice while she records)
-  questionsNarrator: [
-    "/seed/demo-memo/q1-narrator.mp3",
-    "/seed/demo-memo/q2-narrator.mp3",
-    "/seed/demo-memo/q3-narrator.mp3",
-    "/seed/demo-memo/q4-narrator.mp3",
-  ],
-  // Recipient-side (Emma hears these in Mom's cloned voice on playback)
-  questionsInRecorderVoice: [
-    "/seed/demo-memo/q1-ma-voice.mp3",
-    "/seed/demo-memo/q2-ma-voice.mp3",
-    "/seed/demo-memo/q3-ma-voice.mp3",
-    "/seed/demo-memo/q4-ma-voice.mp3",
-  ],
-  // The full stitched playback file — questions in Mom's cloned voice + her
-  // recorded answers, edited together. This is what Emma plays back.
   fullPlayback: "/seed/demo-memo/full-playback.mp3",
 };
 
@@ -104,9 +89,6 @@ export function buildDemoMemo(): Memo {
     topic:
       "I want to tell Emma the recipe for the spaghetti my mother used to make.",
     audioBlobKey: `demo:${DEMO_MEMO_ID}:full-playback`,
-    questionAudioBlobKeys: DEMO_AUDIO.questionsInRecorderVoice.map(
-      (_, i) => `demo:${DEMO_MEMO_ID}:q${i + 1}-ma-voice`,
-    ),
     durationSeconds: 96,
     createdAt: "2026-04-25T11:30:00.000Z",
     transcript: DEMO_TRANSCRIPT,
@@ -116,7 +98,6 @@ export function buildDemoMemo(): Memo {
     pullQuotes: DEMO_PULLQUOTES,
     categories: DEMO_CATEGORIES,
     aboutSubjectIds: [SEED_SUBJECT_IDS.nani],
-    voiceUsedForQuestions: SEED_SUBJECT_IDS.ma,
     frozen: true,
   };
 }

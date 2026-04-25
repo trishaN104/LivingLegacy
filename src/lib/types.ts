@@ -25,9 +25,6 @@ export type Subject = {
 
 export type Member = {
   subjectId: string;
-  voiceCloneId?: string; // ElevenLabs voice ID, present iff consent granted
-  voiceConsentAt?: string;
-  voiceRevokedAt?: string; // future memos use neutral narrator if set
   defaultAudience: AudienceRule;
   perRecipientAudience?: Record<string, AudienceRule>;
   voiceFirstMode: boolean; // "Read everything to me and let me speak"
@@ -61,8 +58,7 @@ export type Memo = {
   intendedRecipientSubjectIds: string[];
   audience: AudienceRule;
   topic: string;
-  audioBlobKey: string; // IndexedDB key — final stitched recorder-voice blob
-  questionAudioBlobKeys: string[]; // per-question rendered audio for playback
+  audioBlobKey: string; // IndexedDB key — single continuous recorder mic blob
   durationSeconds: number;
   createdAt: string;
   transcript: TranscriptBlock[];
@@ -70,7 +66,6 @@ export type Memo = {
   pullQuotes: string[];
   categories: CategoryTag[];
   aboutSubjectIds: string[]; // cross-filing
-  voiceUsedForQuestions: string; // "kin-narrator" or recorderSubjectId
   parentMemoId?: string; // present iff this memo is a reply
   frozen: true; // type-level invariant: memos do not mutate after save
 };

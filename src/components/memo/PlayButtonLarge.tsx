@@ -8,35 +8,34 @@ import { log } from "@/lib/log";
 
 // Memo listen-page playback. Walks the transcript in order:
 //
-//   interviewer block → speak the question through a TTS step. We prefer
-//                       the pre-rendered ElevenLabs blob (in the recorder's
-//                       cloned voice) if one was saved at finalize time;
-//                       otherwise we fall through to the browser's
-//                       SpeechSynthesis, with the standard Chrome quirks
-//                       worked around (see speakUtterance below).
+//   interviewer block → spoken by browser SpeechSynthesis (TTS).
 //   recorder block    → seek inside the single mic blob to [startMs, endMs]
-//                       and play that slice.
+//                       and play that slice — the recorder's actual voice.
 //
-// audio.src for the mic blob is wired ONCE through the ref. The
-// pre-rendered question blobs play through a SECOND <audio> element so
-// switching question src never disturbs the mic blob's currentTime.
-// Neither element gets `src` as a JSX prop — React reconciles src back
-// to "" on every re-render and that was the silent-pause culprit.
+// One <audio> element holds the recorder's mic blob. Its src is wired ONCE
+// via ref so React reconciliation never resets it. Questions never touch
+// the <audio> element — they're purely SpeechSynthesis.
 //
-// SpeechSynthesis is brittle on Chrome:
-//   - First utterance after page load is dropped if voices aren't loaded.
+// Two playback modes exist for memos without per-turn timings:
+//   - "interleaved" (the normal path) — Q TTS → A audio slice → Q TTS → ...
+//   - "legacy-audio" — for old memos with no per-turn boundaries: just play
+//     the full mic blob continuously, no question interleave.
+//   - "legacy-tts"   — for memos with no recorded audio at all (placeholder
+//     blob): speak the whole transcript via TTS as a fallback.
+//
+// SpeechSynthesis on Chrome:
+//   - getVoices() returns [] until something asks for voices. We prime once
+//     on mount so they're loaded by the time the user clicks Play.
+//   - speak() silently no-ops if no voice is set on the utterance, which
+//     happens when getVoices() is empty.
 //   - onend doesn't always fire (esp. for utterances cancelled by another
 //     speak()).
-//   - cancel() right before speak() can drop the next speak().
-//
-// speakUtterance handles all of those: it waits for voices, sets lang
-// explicitly, and arms a duration-based safety timer that force-advances
-// the chain if onend never fires.
+// speakUtterance handles all of those: waits for voices, sets lang
+// explicitly, and arms a duration-based safety timer.
 
 type Step =
   | { kind: "tts"; text: string }
-  | { kind: "qaudio"; url: string } // pre-rendered question blob (ElevenLabs)
-  | { kind: "audio"; startMs: number; endMs: number }; // mic blob seek
+  | { kind: "audio"; startMs: number; endMs: number };
 
 type Mode = "interleaved" | "legacy-audio" | "legacy-tts" | null;
 
@@ -50,7 +49,6 @@ export function PlayButtonLarge({
   viewer: Subject;
 }) {
   const micAudioRef = useRef<HTMLAudioElement | null>(null);
-  const qAudioRef = useRef<HTMLAudioElement | null>(null);
   const stoppedRef = useRef(true);
   const cursorRef = useRef(0);
 
@@ -64,10 +62,24 @@ export function PlayButtonLarge({
     [memo.transcript],
   );
 
+  // Prime SpeechSynthesis voices once on mount. Chrome doesn't load voices
+  // until something asks for them, and speak() silently no-ops if no voice
+  // is set on the utterance (which happens when getVoices() is empty).
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const synth = window.speechSynthesis;
+    synth.getVoices();
+    const onVoicesChanged = () => {
+      synth.getVoices();
+    };
+    synth.addEventListener("voiceschanged", onVoicesChanged);
+    return () => synth.removeEventListener("voiceschanged", onVoicesChanged);
+  }, []);
+
   // ── Load audio + build step plan ────────────────────────────────────────
   useEffect(() => {
-    const revokeUrls: string[] = [];
     let cancelled = false;
+    const micUrlsToRevoke: string[] = [];
     cursorRef.current = 0;
     stoppedRef.current = true;
     setPlaying(false);
@@ -90,20 +102,11 @@ export function PlayButtonLarge({
 
         // Wire the mic blob src ONCE via ref.
         const micUrl = URL.createObjectURL(blob);
-        revokeUrls.push(micUrl);
+        micUrlsToRevoke.push(micUrl);
         if (micAudioRef.current) {
           micAudioRef.current.src = micUrl;
           micAudioRef.current.preload = "auto";
         }
-
-        // Load any rendered question blobs (ElevenLabs cloned voice). These
-        // are best-effort; missing/placeholder entries fall back to TTS.
-        const questionUrls = await loadKeyArray(
-          family.id,
-          memo.questionAudioBlobKeys ?? [],
-        );
-        if (cancelled) return;
-        for (const u of questionUrls) if (u) revokeUrls.push(u);
 
         // Decide whether transcript timings are real per-turn boundaries
         // or stubs from old finalize().
@@ -123,16 +126,10 @@ export function PlayButtonLarge({
         }
 
         const built: Step[] = [];
-        let qIdx = 0;
         for (const block of memo.transcript) {
           if (block.speaker === "interviewer") {
             const text = (block.text || "").trim();
-            const url = questionUrls[qIdx++] ?? null;
-            if (url) {
-              built.push({ kind: "qaudio", url });
-            } else if (text) {
-              built.push({ kind: "tts", text });
-            }
+            if (text) built.push({ kind: "tts", text });
           } else if (block.endMs > block.startMs) {
             built.push({
               kind: "audio",
@@ -165,13 +162,6 @@ export function PlayButtonLarge({
           // ignore
         }
       }
-      if (qAudioRef.current) {
-        try {
-          qAudioRef.current.pause();
-        } catch {
-          // ignore
-        }
-      }
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         try {
           window.speechSynthesis.cancel();
@@ -179,7 +169,7 @@ export function PlayButtonLarge({
           // ignore
         }
       }
-      for (const u of revokeUrls) URL.revokeObjectURL(u);
+      for (const u of micUrlsToRevoke) URL.revokeObjectURL(u);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memo.id, family.id, viewer.id]);
@@ -211,13 +201,6 @@ export function PlayButtonLarge({
     if (micAudioRef.current) {
       try {
         micAudioRef.current.pause();
-      } catch {
-        // ignore
-      }
-    }
-    if (qAudioRef.current) {
-      try {
-        qAudioRef.current.pause();
       } catch {
         // ignore
       }
@@ -365,36 +348,6 @@ export function PlayButtonLarge({
       return;
     }
 
-    if (step.kind === "qaudio") {
-      const t = qAudioRef.current;
-      if (!t) {
-        advance();
-        return;
-      }
-      const onQEnded = () => {
-        t.removeEventListener("ended", onQEnded);
-        t.removeEventListener("error", onQError);
-        advance();
-      };
-      const onQError = () => {
-        t.removeEventListener("ended", onQEnded);
-        t.removeEventListener("error", onQError);
-        advance();
-      };
-      t.src = step.url;
-      t.addEventListener("ended", onQEnded);
-      t.addEventListener("error", onQError);
-      const p = t.play();
-      if (p && typeof p.catch === "function") {
-        p.catch(() => {
-          t.removeEventListener("ended", onQEnded);
-          t.removeEventListener("error", onQError);
-          advance();
-        });
-      }
-      return;
-    }
-
     // tts
     speakUtterance(step.text, stoppedRef, advance);
   }
@@ -424,9 +377,8 @@ export function PlayButtonLarge({
 
       <FauxWaveform playing={playing} />
 
-      {/* Refs only — never set src as a JSX prop. */}
+      {/* Ref only — never set src as a JSX prop. */}
       <audio ref={micAudioRef} preload="auto" />
-      <audio ref={qAudioRef} preload="auto" />
 
       {mode === "interleaved" && interviewerCount > 0 && (
         <p className="type-metadata text-ink-tertiary text-center reading-width">
@@ -451,30 +403,6 @@ export function PlayButtonLarge({
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-async function loadKeyArray(
-  familyId: string,
-  keys: string[],
-): Promise<(string | null)[]> {
-  const out: (string | null)[] = [];
-  for (const k of keys) {
-    if (!k) {
-      out.push(null);
-      continue;
-    }
-    try {
-      const blob = await loadAudioBlob(familyId, k);
-      if (!blob || blob.size < 256 || isPlaceholderAudio(blob)) {
-        out.push(null);
-        continue;
-      }
-      out.push(URL.createObjectURL(blob));
-    } catch {
-      out.push(null);
-    }
-  }
-  return out;
-}
-
 // Robust SpeechSynthesis utterance for Chrome. Calls `onDone` exactly once,
 // no matter what — including when Chrome silently swallows onend.
 function speakUtterance(
@@ -489,6 +417,7 @@ function speakUtterance(
   const synth = window.speechSynthesis;
 
   let done = false;
+  let fired = false;
   const finalize = () => {
     if (done) return;
     done = true;
@@ -496,6 +425,8 @@ function speakUtterance(
   };
 
   function fire() {
+    if (fired) return; // guard against voiceschanged + timeout double-fire
+    fired = true;
     if (stoppedRef.current) {
       finalize();
       return;
@@ -530,7 +461,9 @@ function speakUtterance(
   }
 
   // Voices load async on Chrome. If they're not ready, the first speak()
-  // is silently dropped. Wait for them (with a short fallback).
+  // is silently dropped — speak() needs a voice on the utterance, and
+  // without loaded voices we can't pick one. Wait for them, with a
+  // generous fallback (some systems are slow), and fire exactly once.
   if (synth.getVoices().length === 0) {
     const onVoicesChanged = () => {
       synth.removeEventListener("voiceschanged", onVoicesChanged);
@@ -539,8 +472,8 @@ function speakUtterance(
     synth.addEventListener("voiceschanged", onVoicesChanged);
     setTimeout(() => {
       synth.removeEventListener("voiceschanged", onVoicesChanged);
-      if (!done) fire();
-    }, 400);
+      fire();
+    }, 1500);
   } else {
     fire();
   }

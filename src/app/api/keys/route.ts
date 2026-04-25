@@ -8,7 +8,6 @@ export async function GET() {
   return NextResponse.json({
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     openai: !!process.env.OPENAI_API_KEY,
-    elevenlabs: !!process.env.ELEVENLABS_API_KEY,
     demoMode:
       process.env.KIN_DEMO_MODE === "true" ||
       process.env.NEXT_PUBLIC_KIN_DEMO_MODE === "true",

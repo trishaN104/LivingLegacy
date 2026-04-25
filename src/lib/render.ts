@@ -8,15 +8,12 @@
 import { v4 as randomId } from "./uuid";
 import type { CategoryTag, Memo, TranscriptBlock } from "./types";
 import { putAudioBlob, saveMemo } from "./storage";
-import { renderQuestion } from "./elevenlabs";
 import { isDemoMemo, isDemoMode, buildDemoMemo } from "./demo";
-import { log } from "./log";
 
 export interface FinalizeMemoInput {
   memoId: string;
   familyId: string;
   recorderSubjectId: string;
-  recorderVoiceCloneId: string | null;
   intendedRecipientSubjectIds: string[];
   audience: import("./types").AudienceRule;
   topic: string;
@@ -42,29 +39,9 @@ export async function finalizeMemo(input: FinalizeMemoInput): Promise<Memo> {
     return demo;
   }
 
-  const interviewerTurns = input.transcript.filter((b) => b.speaker === "interviewer");
-  const questionAudioBlobKeys: string[] = [];
-  const voiceUsedForQuestions = input.recorderVoiceCloneId ?? "kin-narrator";
-
-  for (let i = 0; i < interviewerTurns.length; i++) {
-    const turn = interviewerTurns[i];
-    try {
-      const blob = await renderQuestion({
-        memoId: input.memoId,
-        questionIndex: i,
-        voiceCloneId: input.recorderVoiceCloneId,
-        text: turn.text,
-      });
-      const key = `q-${input.memoId}-${i}-${randomId()}`;
-      await putAudioBlob(input.familyId, key, blob);
-      questionAudioBlobKeys.push(key);
-    } catch (err) {
-      log.warn("render", `question ${i} render failed; continuing`, err);
-    }
-  }
-
   // Single full-recording blob — the unbroken mic capture. The listen page
-  // uses transcript per-turn timestamps to seek inside this blob.
+  // uses transcript per-turn timestamps to seek inside this blob. Interviewer
+  // questions are spoken via browser TTS at playback time — nothing to render.
   const fullPlaybackKey = `full-${input.memoId}-${randomId()}`;
   await putAudioBlob(input.familyId, fullPlaybackKey, input.recorderAudioBlob);
 
@@ -75,7 +52,6 @@ export async function finalizeMemo(input: FinalizeMemoInput): Promise<Memo> {
     audience: input.audience,
     topic: input.topic,
     audioBlobKey: fullPlaybackKey,
-    questionAudioBlobKeys,
     durationSeconds: input.durationSeconds,
     createdAt: new Date().toISOString(),
     transcript: input.transcript,
@@ -83,7 +59,6 @@ export async function finalizeMemo(input: FinalizeMemoInput): Promise<Memo> {
     pullQuotes: input.pullQuotes,
     categories: input.categories,
     aboutSubjectIds: input.aboutSubjectIds,
-    voiceUsedForQuestions,
     parentMemoId: input.parentMemoId,
     frozen: true,
   };

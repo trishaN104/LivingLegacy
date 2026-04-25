@@ -16,10 +16,6 @@ import { log } from "./log";
 
 const DEMO_KEYS: Record<string, string> = {
   [`demo:${DEMO_MEMO_ID}:full-playback`]: DEMO_AUDIO.fullPlayback,
-  [`demo:${DEMO_MEMO_ID}:q1-ma-voice`]: DEMO_AUDIO.questionsInRecorderVoice[0],
-  [`demo:${DEMO_MEMO_ID}:q2-ma-voice`]: DEMO_AUDIO.questionsInRecorderVoice[1],
-  [`demo:${DEMO_MEMO_ID}:q3-ma-voice`]: DEMO_AUDIO.questionsInRecorderVoice[2],
-  [`demo:${DEMO_MEMO_ID}:q4-ma-voice`]: DEMO_AUDIO.questionsInRecorderVoice[3],
 };
 
 // Marker MIME so callers can recognize "the asset is not staged; please use

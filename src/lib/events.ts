@@ -19,8 +19,6 @@ export type FamilyEvent =
   | { type: "subject.added"; subject: Subject; at: string }
   | { type: "subject.deceasedMarked"; subjectId: string; deathYear: number; at: string }
   | { type: "member.activated"; member: Member; at: string }
-  | { type: "member.voiceConsented"; subjectId: string; voiceCloneId: string; at: string }
-  | { type: "member.voiceRevoked"; subjectId: string; at: string }
   | { type: "member.defaultAudienceChanged"; subjectId: string; rule: AudienceRule; at: string }
   | { type: "member.voiceFirstModeToggled"; subjectId: string; on: boolean; at: string }
   | { type: "treeEdge.added"; edge: TreeEdge; at: string }
@@ -56,29 +54,6 @@ export function applyEvent(family: Family, event: FamilyEvent): Family {
     case "member.activated":
       if (family.members.some((m) => m.subjectId === event.member.subjectId)) return family;
       return { ...family, members: [...family.members, event.member] };
-
-    case "member.voiceConsented":
-      return {
-        ...family,
-        members: family.members.map((m) =>
-          m.subjectId === event.subjectId
-            ? {
-                ...m,
-                voiceCloneId: event.voiceCloneId,
-                voiceConsentAt: event.at,
-                voiceRevokedAt: undefined,
-              }
-            : m,
-        ),
-      };
-
-    case "member.voiceRevoked":
-      return {
-        ...family,
-        members: family.members.map((m) =>
-          m.subjectId === event.subjectId ? { ...m, voiceRevokedAt: event.at } : m,
-        ),
-      };
 
     case "member.defaultAudienceChanged":
       return {

@@ -152,7 +152,6 @@ function makeMemo(opts: { recorder: string; audience: AudienceRule }): Memo {
     audience: opts.audience,
     topic: "test topic",
     audioBlobKey: "blob:fake",
-    questionAudioBlobKeys: [],
     durationSeconds: 60,
     createdAt: now(),
     transcript: [],
@@ -160,7 +159,6 @@ function makeMemo(opts: { recorder: string; audience: AudienceRule }): Memo {
     pullQuotes: [],
     categories: [],
     aboutSubjectIds: [],
-    voiceUsedForQuestions: "kin-narrator",
     frozen: true,
   };
 }

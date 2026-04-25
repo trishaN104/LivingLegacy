@@ -110,12 +110,6 @@ export function seedEvents(): FamilyEvent[] {
   for (const s of subjects) events.push({ type: "subject.added", subject: s, at: ts });
   for (const m of members) {
     events.push({ type: "member.activated", member: m, at: ts });
-    events.push({
-      type: "member.voiceConsented",
-      subjectId: m.subjectId,
-      voiceCloneId: `seed-clone-${m.subjectId}`,
-      at: ts,
-    });
   }
   for (const e of tree) events.push({ type: "treeEdge.added", edge: e, at: ts });
   return events;
@@ -127,11 +121,7 @@ export function seedFamilySnapshot(): Family {
     name: DEMO_FAMILY_NAME,
     createdAt: ts,
     subjects,
-    members: members.map((m) => ({
-      ...m,
-      voiceCloneId: `seed-clone-${m.subjectId}`,
-      voiceConsentAt: ts,
-    })),
+    members,
     tree,
     defaultAudienceByRecorder: {
       [SEED_SUBJECT_IDS.ma]: { kind: "include", subjectIds: [SEED_SUBJECT_IDS.aanya, SEED_SUBJECT_IDS.rohan] },
