@@ -1,26 +1,34 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { playMemo } from "@/lib/privacy";
 import { isPlaceholderAudio, loadAudioBlob } from "@/lib/audio-loader";
 import type { Family, Memo, Subject, TranscriptBlock } from "@/lib/types";
 import { log } from "@/lib/log";
 
-// Large play button + waveform on the memo listen page.
+// Memo listen-page playback. Walks the transcript in order:
 //
-// Playback model — intentionally simple:
+//   interviewer block → SpeechSynthesis (browser voice) speaks the question
+//   recorder block    → seek inside the single mic blob to [startMs, endMs]
+//                       and play that slice
 //
-//   • Always play the recorder's continuous mic recording (audioBlobKey)
-//     start-to-finish. No question interleaving on this surface.
-//   • If there is no audio blob (placeholder), fall back to speaking the
-//     transcript via the browser's SpeechSynthesis so the listener still
-//     hears something.
+// One <audio> element. Its src is wired ONCE through the ref — never via
+// a JSX prop — because React reconciles the src attribute back to "" on
+// every re-render, which previously stomped playback mid-walk.
 //
-// The interleave-with-rendered-questions experiment was removed: webm
-// chunks captured per-turn don't decode standalone (only the first chunk
-// has the init segment) and the React reconcile of <audio src> kept
-// resetting playback mid-walk. The recorder's voice was never reliably
-// audible. This component now does one thing: play the recording.
+// SpeechSynthesis.cancel() is NEVER called between utterances in the chain.
+// Chrome's queue gets confused by cancel→speak in quick succession and the
+// next utterance silently never speaks. cancel() only fires on user pause
+// or unmount.
+//
+// If the recorder transcript blocks lack real per-turn timings (older
+// memos saved before turnBoundariesMs existed), we fall back to playing
+// the full mic blob continuously without questions — the recording is
+// always audible no matter what.
+
+type Step =
+  | { kind: "tts"; text: string }
+  | { kind: "audio"; startMs: number; endMs: number };
 
 export function PlayButtonLarge({
   memo,
@@ -32,19 +40,32 @@ export function PlayButtonLarge({
   viewer: Subject;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [mode, setMode] = useState<"audio" | "tts" | null>(null);
+  const stoppedRef = useRef(true);
+  const cursorRef = useRef(0);
+
+  const [audioReady, setAudioReady] = useState(false);
+  const [steps, setSteps] = useState<Step[] | null>(null);
+  // Mode `legacy-audio` → no per-turn timings, just play the whole blob.
+  // Mode `legacy-tts`   → no audio asset, speak the transcript instead.
+  const [mode, setMode] = useState<"interleaved" | "legacy-audio" | "legacy-tts" | null>(null);
   const [playing, setPlaying] = useState(false);
   const [errored, setErrored] = useState(false);
 
-  // Keep a hard-stop flag so a long TTS chain bails out the moment the
-  // user pauses or unmounts.
-  const stoppedRef = useRef(true);
+  const interviewerCount = useMemo(
+    () => memo.transcript.filter((b) => b.speaker === "interviewer").length,
+    [memo.transcript],
+  );
 
+  // ── Load audio + build step plan ────────────────────────────────────────
   useEffect(() => {
     let revoke: string | null = null;
     let cancelled = false;
+    cursorRef.current = 0;
     stoppedRef.current = true;
+    setPlaying(false);
+    setSteps(null);
+    setMode(null);
+    setAudioReady(false);
 
     void (async () => {
       try {
@@ -53,19 +74,59 @@ export function PlayButtonLarge({
         );
         if (cancelled) return;
 
-        if (isPlaceholderAudio(blob) || blob.size < 256) {
-          setMode("tts");
+        const placeholder = isPlaceholderAudio(blob) || blob.size < 256;
+
+        if (placeholder) {
+          // No real recording → speak the whole transcript.
+          setMode("legacy-tts");
           return;
         }
 
         const url = URL.createObjectURL(blob);
         revoke = url;
-        setAudioUrl(url);
-        setMode("audio");
         if (audioRef.current) {
           audioRef.current.src = url;
           audioRef.current.preload = "auto";
         }
+        setAudioReady(true);
+
+        // Decide whether transcript timings are real per-turn boundaries
+        // or stubs. Real timings cover the vast majority of the recording;
+        // stubs are 1 s wide each from old finalize().
+        const recBlocks = memo.transcript.filter((b) => b.speaker === "recorder");
+        const totalMs = (memo.durationSeconds || 0) * 1000;
+        const lastRec = recBlocks[recBlocks.length - 1];
+        const haveRealTimings =
+          !!lastRec &&
+          lastRec.endMs > lastRec.startMs &&
+          (totalMs === 0 || lastRec.endMs >= totalMs * 0.5);
+
+        if (!haveRealTimings || memo.transcript.length === 0) {
+          setMode("legacy-audio");
+          return;
+        }
+
+        const built: Step[] = [];
+        for (const block of memo.transcript) {
+          if (block.speaker === "interviewer") {
+            const text = (block.text || "").trim();
+            if (text) built.push({ kind: "tts", text });
+          } else if (block.endMs > block.startMs) {
+            built.push({
+              kind: "audio",
+              startMs: block.startMs,
+              endMs: block.endMs,
+            });
+          }
+        }
+
+        if (built.length === 0) {
+          setMode("legacy-audio");
+          return;
+        }
+
+        setSteps(built);
+        setMode("interleaved");
       } catch (err) {
         log.warn("PlayButtonLarge", "could not load audio", err);
         if (!cancelled) setErrored(true);
@@ -94,11 +155,11 @@ export function PlayButtonLarge({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memo.id, family.id, viewer.id]);
 
-  // Hook the audio element's events to drive the play/pause state once src
-  // is set. We re-run when audioUrl changes (i.e. the blob has loaded).
+  // ── legacy-audio mode wiring (full mic blob continuous) ─────────────────
   useEffect(() => {
+    if (mode !== "legacy-audio") return;
     const a = audioRef.current;
-    if (!a || !audioUrl) return;
+    if (!a) return;
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onEnded = () => setPlaying(false);
@@ -113,9 +174,28 @@ export function PlayButtonLarge({
       a.removeEventListener("ended", onEnded);
       a.removeEventListener("error", onErr);
     };
-  }, [audioUrl]);
+  }, [mode]);
 
-  function toggleAudio() {
+  // ── controls ────────────────────────────────────────────────────────────
+  function stopEverything() {
+    stoppedRef.current = true;
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function toggleLegacyAudio() {
     const a = audioRef.current;
     if (!a) return;
     if (a.paused) {
@@ -127,15 +207,14 @@ export function PlayButtonLarge({
     }
   }
 
-  function toggleTts() {
+  function toggleLegacyTts() {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       setErrored(true);
       return;
     }
     const synth = window.speechSynthesis;
     if (playing) {
-      stoppedRef.current = true;
-      synth.cancel();
+      stopEverything();
       setPlaying(false);
       return;
     }
@@ -143,7 +222,7 @@ export function PlayButtonLarge({
     setPlaying(true);
 
     const blocks: TranscriptBlock[] = memo.transcript.length
-      ? memo.transcript.filter((b) => b.speaker === "recorder")
+      ? memo.transcript
       : [
           {
             speaker: "recorder",
@@ -166,8 +245,8 @@ export function PlayButtonLarge({
         return;
       }
       const u = new SpeechSynthesisUtterance(b.text);
-      u.rate = 0.95;
-      u.pitch = 1.0;
+      u.rate = b.speaker === "interviewer" ? 0.95 : 0.92;
+      u.pitch = b.speaker === "interviewer" ? 1.08 : 0.96;
       u.onend = speakNext;
       u.onerror = () => setPlaying(false);
       synth.speak(u);
@@ -175,9 +254,120 @@ export function PlayButtonLarge({
     speakNext();
   }
 
+  function toggleInterleaved() {
+    if (!steps) return;
+    if (playing) {
+      stopEverything();
+      setPlaying(false);
+      return;
+    }
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      // No TTS available → play just the audio segments.
+      stoppedRef.current = false;
+      setPlaying(true);
+      runStepAt(audioOnlyIndex(steps, 0));
+      return;
+    }
+    stoppedRef.current = false;
+    setPlaying(true);
+    const start = cursorRef.current >= steps.length ? 0 : cursorRef.current;
+    runStepAt(start);
+  }
+
+  function runStepAt(index: number) {
+    if (!steps) return;
+    if (stoppedRef.current) return;
+    if (index >= steps.length) {
+      cursorRef.current = 0;
+      setPlaying(false);
+      return;
+    }
+    cursorRef.current = index;
+    const step = steps[index];
+
+    const advance = () => {
+      if (stoppedRef.current) return;
+      runStepAt(index + 1);
+    };
+
+    if (step.kind === "audio") {
+      const a = audioRef.current;
+      if (!a || !a.src) {
+        advance();
+        return;
+      }
+      const startSec = step.startMs / 1000;
+      const endSec = step.endMs / 1000;
+
+      const onTimeUpdate = () => {
+        if (a.currentTime >= endSec - 0.04) {
+          a.removeEventListener("timeupdate", onTimeUpdate);
+          a.removeEventListener("ended", onEnded);
+          try {
+            a.pause();
+          } catch {
+            // ignore
+          }
+          advance();
+        }
+      };
+      const onEnded = () => {
+        a.removeEventListener("timeupdate", onTimeUpdate);
+        a.removeEventListener("ended", onEnded);
+        advance();
+      };
+
+      // Resume keeps position if currentTime is still inside the segment.
+      if (a.currentTime < startSec || a.currentTime >= endSec) {
+        try {
+          a.currentTime = startSec;
+        } catch {
+          // ignore
+        }
+      }
+      a.addEventListener("timeupdate", onTimeUpdate);
+      a.addEventListener("ended", onEnded);
+
+      const p = a.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          a.removeEventListener("timeupdate", onTimeUpdate);
+          a.removeEventListener("ended", onEnded);
+          advance();
+        });
+      }
+      return;
+    }
+
+    // tts (no synth.cancel() — that breaks Chrome's queue mid-chain)
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      advance();
+      return;
+    }
+    const synth = window.speechSynthesis;
+    const u = new SpeechSynthesisUtterance(step.text);
+    u.rate = 0.95;
+    u.pitch = 1.08;
+    const voices = synth.getVoices();
+    const preferred =
+      voices.find((v) => /samantha|google us english|natural/i.test(v.name)) ??
+      voices.find((v) => v.lang?.toLowerCase().startsWith("en")) ??
+      voices[0];
+    if (preferred) u.voice = preferred;
+    u.onend = advance;
+    u.onerror = advance;
+    synth.speak(u);
+  }
+
   const onClick =
-    mode === "audio" ? toggleAudio : mode === "tts" ? toggleTts : undefined;
-  const ready = !!mode;
+    mode === "interleaved"
+      ? toggleInterleaved
+      : mode === "legacy-audio"
+        ? toggleLegacyAudio
+        : mode === "legacy-tts"
+          ? toggleLegacyTts
+          : undefined;
+  const ready = mode === "legacy-tts" ? true : !!mode && (mode !== "legacy-audio" || audioReady);
   const disabled = errored || !ready;
 
   return (
@@ -198,7 +388,13 @@ export function PlayButtonLarge({
           back to empty mid-playback. */}
       <audio ref={audioRef} preload="auto" />
 
-      {mode === "tts" && (
+      {mode === "interleaved" && interviewerCount > 0 && (
+        <p className="type-metadata text-ink-tertiary text-center reading-width">
+          {interviewerCount === 1 ? "1 question" : `${interviewerCount} questions`}{" "}
+          and answers, played back in order.
+        </p>
+      )}
+      {mode === "legacy-tts" && (
         <p className="type-metadata text-ink-tertiary text-center reading-width">
           The recorded audio for this memo isn&apos;t staged yet — playing
           the transcript with the browser&apos;s voice instead.
@@ -211,6 +407,14 @@ export function PlayButtonLarge({
       )}
     </div>
   );
+}
+
+// If TTS isn't available, skip past tts steps to find the next audio one.
+function audioOnlyIndex(steps: Step[], from: number): number {
+  for (let i = from; i < steps.length; i++) {
+    if (steps[i].kind === "audio") return i;
+  }
+  return steps.length;
 }
 
 function PlayIcon() {
