@@ -8,27 +8,37 @@ import { log } from "@/lib/log";
 
 // Memo listen-page playback. Walks the transcript in order:
 //
-//   interviewer block → SpeechSynthesis (browser voice) speaks the question
+//   interviewer block → speak the question through a TTS step. We prefer
+//                       the pre-rendered ElevenLabs blob (in the recorder's
+//                       cloned voice) if one was saved at finalize time;
+//                       otherwise we fall through to the browser's
+//                       SpeechSynthesis, with the standard Chrome quirks
+//                       worked around (see speakUtterance below).
 //   recorder block    → seek inside the single mic blob to [startMs, endMs]
-//                       and play that slice
+//                       and play that slice.
 //
-// One <audio> element. Its src is wired ONCE through the ref — never via
-// a JSX prop — because React reconciles the src attribute back to "" on
-// every re-render, which previously stomped playback mid-walk.
+// audio.src for the mic blob is wired ONCE through the ref. The
+// pre-rendered question blobs play through a SECOND <audio> element so
+// switching question src never disturbs the mic blob's currentTime.
+// Neither element gets `src` as a JSX prop — React reconciles src back
+// to "" on every re-render and that was the silent-pause culprit.
 //
-// SpeechSynthesis.cancel() is NEVER called between utterances in the chain.
-// Chrome's queue gets confused by cancel→speak in quick succession and the
-// next utterance silently never speaks. cancel() only fires on user pause
-// or unmount.
+// SpeechSynthesis is brittle on Chrome:
+//   - First utterance after page load is dropped if voices aren't loaded.
+//   - onend doesn't always fire (esp. for utterances cancelled by another
+//     speak()).
+//   - cancel() right before speak() can drop the next speak().
 //
-// If the recorder transcript blocks lack real per-turn timings (older
-// memos saved before turnBoundariesMs existed), we fall back to playing
-// the full mic blob continuously without questions — the recording is
-// always audible no matter what.
+// speakUtterance handles all of those: it waits for voices, sets lang
+// explicitly, and arms a duration-based safety timer that force-advances
+// the chain if onend never fires.
 
 type Step =
   | { kind: "tts"; text: string }
-  | { kind: "audio"; startMs: number; endMs: number };
+  | { kind: "qaudio"; url: string } // pre-rendered question blob (ElevenLabs)
+  | { kind: "audio"; startMs: number; endMs: number }; // mic blob seek
+
+type Mode = "interleaved" | "legacy-audio" | "legacy-tts" | null;
 
 export function PlayButtonLarge({
   memo,
@@ -39,15 +49,13 @@ export function PlayButtonLarge({
   family: Family;
   viewer: Subject;
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const micAudioRef = useRef<HTMLAudioElement | null>(null);
+  const qAudioRef = useRef<HTMLAudioElement | null>(null);
   const stoppedRef = useRef(true);
   const cursorRef = useRef(0);
 
-  const [audioReady, setAudioReady] = useState(false);
   const [steps, setSteps] = useState<Step[] | null>(null);
-  // Mode `legacy-audio` → no per-turn timings, just play the whole blob.
-  // Mode `legacy-tts`   → no audio asset, speak the transcript instead.
-  const [mode, setMode] = useState<"interleaved" | "legacy-audio" | "legacy-tts" | null>(null);
+  const [mode, setMode] = useState<Mode>(null);
   const [playing, setPlaying] = useState(false);
   const [errored, setErrored] = useState(false);
 
@@ -58,14 +66,13 @@ export function PlayButtonLarge({
 
   // ── Load audio + build step plan ────────────────────────────────────────
   useEffect(() => {
-    let revoke: string | null = null;
+    const revokeUrls: string[] = [];
     let cancelled = false;
     cursorRef.current = 0;
     stoppedRef.current = true;
     setPlaying(false);
     setSteps(null);
     setMode(null);
-    setAudioReady(false);
 
     void (async () => {
       try {
@@ -77,29 +84,38 @@ export function PlayButtonLarge({
         const placeholder = isPlaceholderAudio(blob) || blob.size < 256;
 
         if (placeholder) {
-          // No real recording → speak the whole transcript.
           setMode("legacy-tts");
           return;
         }
 
-        const url = URL.createObjectURL(blob);
-        revoke = url;
-        if (audioRef.current) {
-          audioRef.current.src = url;
-          audioRef.current.preload = "auto";
+        // Wire the mic blob src ONCE via ref.
+        const micUrl = URL.createObjectURL(blob);
+        revokeUrls.push(micUrl);
+        if (micAudioRef.current) {
+          micAudioRef.current.src = micUrl;
+          micAudioRef.current.preload = "auto";
         }
-        setAudioReady(true);
+
+        // Load any rendered question blobs (ElevenLabs cloned voice). These
+        // are best-effort; missing/placeholder entries fall back to TTS.
+        const questionUrls = await loadKeyArray(
+          family.id,
+          memo.questionAudioBlobKeys ?? [],
+        );
+        if (cancelled) return;
+        for (const u of questionUrls) if (u) revokeUrls.push(u);
 
         // Decide whether transcript timings are real per-turn boundaries
-        // or stubs. Real timings cover the vast majority of the recording;
-        // stubs are 1 s wide each from old finalize().
-        const recBlocks = memo.transcript.filter((b) => b.speaker === "recorder");
+        // or stubs from old finalize().
+        const recBlocks = memo.transcript.filter(
+          (b) => b.speaker === "recorder",
+        );
         const totalMs = (memo.durationSeconds || 0) * 1000;
         const lastRec = recBlocks[recBlocks.length - 1];
         const haveRealTimings =
           !!lastRec &&
           lastRec.endMs > lastRec.startMs &&
-          (totalMs === 0 || lastRec.endMs >= totalMs * 0.5);
+          (totalMs === 0 || lastRec.endMs >= totalMs * 0.4);
 
         if (!haveRealTimings || memo.transcript.length === 0) {
           setMode("legacy-audio");
@@ -107,10 +123,16 @@ export function PlayButtonLarge({
         }
 
         const built: Step[] = [];
+        let qIdx = 0;
         for (const block of memo.transcript) {
           if (block.speaker === "interviewer") {
             const text = (block.text || "").trim();
-            if (text) built.push({ kind: "tts", text });
+            const url = questionUrls[qIdx++] ?? null;
+            if (url) {
+              built.push({ kind: "qaudio", url });
+            } else if (text) {
+              built.push({ kind: "tts", text });
+            }
           } else if (block.endMs > block.startMs) {
             built.push({
               kind: "audio",
@@ -136,9 +158,16 @@ export function PlayButtonLarge({
     return () => {
       cancelled = true;
       stoppedRef.current = true;
-      if (audioRef.current) {
+      if (micAudioRef.current) {
         try {
-          audioRef.current.pause();
+          micAudioRef.current.pause();
+        } catch {
+          // ignore
+        }
+      }
+      if (qAudioRef.current) {
+        try {
+          qAudioRef.current.pause();
         } catch {
           // ignore
         }
@@ -150,15 +179,15 @@ export function PlayButtonLarge({
           // ignore
         }
       }
-      if (revoke) URL.revokeObjectURL(revoke);
+      for (const u of revokeUrls) URL.revokeObjectURL(u);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memo.id, family.id, viewer.id]);
 
-  // ── legacy-audio mode wiring (full mic blob continuous) ─────────────────
+  // ── legacy-audio mode wiring ────────────────────────────────────────────
   useEffect(() => {
     if (mode !== "legacy-audio") return;
-    const a = audioRef.current;
+    const a = micAudioRef.current;
     if (!a) return;
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
@@ -179,9 +208,16 @@ export function PlayButtonLarge({
   // ── controls ────────────────────────────────────────────────────────────
   function stopEverything() {
     stoppedRef.current = true;
-    if (audioRef.current) {
+    if (micAudioRef.current) {
       try {
-        audioRef.current.pause();
+        micAudioRef.current.pause();
+      } catch {
+        // ignore
+      }
+    }
+    if (qAudioRef.current) {
+      try {
+        qAudioRef.current.pause();
       } catch {
         // ignore
       }
@@ -196,7 +232,7 @@ export function PlayButtonLarge({
   }
 
   function toggleLegacyAudio() {
-    const a = audioRef.current;
+    const a = micAudioRef.current;
     if (!a) return;
     if (a.paused) {
       stoppedRef.current = false;
@@ -212,7 +248,6 @@ export function PlayButtonLarge({
       setErrored(true);
       return;
     }
-    const synth = window.speechSynthesis;
     if (playing) {
       stopEverything();
       setPlaying(false);
@@ -240,16 +275,15 @@ export function PlayButtonLarge({
         return;
       }
       const b = blocks[i++];
-      if (!b.text || !b.text.trim()) {
+      const text = (b.text || "").trim();
+      if (!text) {
         speakNext();
         return;
       }
-      const u = new SpeechSynthesisUtterance(b.text);
-      u.rate = b.speaker === "interviewer" ? 0.95 : 0.92;
-      u.pitch = b.speaker === "interviewer" ? 1.08 : 0.96;
-      u.onend = speakNext;
-      u.onerror = () => setPlaying(false);
-      synth.speak(u);
+      speakUtterance(text, stoppedRef, () => {
+        if (stoppedRef.current) return;
+        speakNext();
+      });
     }
     speakNext();
   }
@@ -259,13 +293,6 @@ export function PlayButtonLarge({
     if (playing) {
       stopEverything();
       setPlaying(false);
-      return;
-    }
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      // No TTS available → play just the audio segments.
-      stoppedRef.current = false;
-      setPlaying(true);
-      runStepAt(audioOnlyIndex(steps, 0));
       return;
     }
     stoppedRef.current = false;
@@ -291,7 +318,7 @@ export function PlayButtonLarge({
     };
 
     if (step.kind === "audio") {
-      const a = audioRef.current;
+      const a = micAudioRef.current;
       if (!a || !a.src) {
         advance();
         return;
@@ -317,7 +344,6 @@ export function PlayButtonLarge({
         advance();
       };
 
-      // Resume keeps position if currentTime is still inside the segment.
       if (a.currentTime < startSec || a.currentTime >= endSec) {
         try {
           a.currentTime = startSec;
@@ -339,24 +365,38 @@ export function PlayButtonLarge({
       return;
     }
 
-    // tts (no synth.cancel() — that breaks Chrome's queue mid-chain)
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      advance();
+    if (step.kind === "qaudio") {
+      const t = qAudioRef.current;
+      if (!t) {
+        advance();
+        return;
+      }
+      const onQEnded = () => {
+        t.removeEventListener("ended", onQEnded);
+        t.removeEventListener("error", onQError);
+        advance();
+      };
+      const onQError = () => {
+        t.removeEventListener("ended", onQEnded);
+        t.removeEventListener("error", onQError);
+        advance();
+      };
+      t.src = step.url;
+      t.addEventListener("ended", onQEnded);
+      t.addEventListener("error", onQError);
+      const p = t.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          t.removeEventListener("ended", onQEnded);
+          t.removeEventListener("error", onQError);
+          advance();
+        });
+      }
       return;
     }
-    const synth = window.speechSynthesis;
-    const u = new SpeechSynthesisUtterance(step.text);
-    u.rate = 0.95;
-    u.pitch = 1.08;
-    const voices = synth.getVoices();
-    const preferred =
-      voices.find((v) => /samantha|google us english|natural/i.test(v.name)) ??
-      voices.find((v) => v.lang?.toLowerCase().startsWith("en")) ??
-      voices[0];
-    if (preferred) u.voice = preferred;
-    u.onend = advance;
-    u.onerror = advance;
-    synth.speak(u);
+
+    // tts
+    speakUtterance(step.text, stoppedRef, advance);
   }
 
   const onClick =
@@ -367,7 +407,7 @@ export function PlayButtonLarge({
         : mode === "legacy-tts"
           ? toggleLegacyTts
           : undefined;
-  const ready = mode === "legacy-tts" ? true : !!mode && (mode !== "legacy-audio" || audioReady);
+  const ready = !!mode;
   const disabled = errored || !ready;
 
   return (
@@ -384,9 +424,9 @@ export function PlayButtonLarge({
 
       <FauxWaveform playing={playing} />
 
-      {/* Refs only — never set src as a JSX prop or React reconciles it
-          back to empty mid-playback. */}
-      <audio ref={audioRef} preload="auto" />
+      {/* Refs only — never set src as a JSX prop. */}
+      <audio ref={micAudioRef} preload="auto" />
+      <audio ref={qAudioRef} preload="auto" />
 
       {mode === "interleaved" && interviewerCount > 0 && (
         <p className="type-metadata text-ink-tertiary text-center reading-width">
@@ -409,12 +449,101 @@ export function PlayButtonLarge({
   );
 }
 
-// If TTS isn't available, skip past tts steps to find the next audio one.
-function audioOnlyIndex(steps: Step[], from: number): number {
-  for (let i = from; i < steps.length; i++) {
-    if (steps[i].kind === "audio") return i;
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+async function loadKeyArray(
+  familyId: string,
+  keys: string[],
+): Promise<(string | null)[]> {
+  const out: (string | null)[] = [];
+  for (const k of keys) {
+    if (!k) {
+      out.push(null);
+      continue;
+    }
+    try {
+      const blob = await loadAudioBlob(familyId, k);
+      if (!blob || blob.size < 256 || isPlaceholderAudio(blob)) {
+        out.push(null);
+        continue;
+      }
+      out.push(URL.createObjectURL(blob));
+    } catch {
+      out.push(null);
+    }
   }
-  return steps.length;
+  return out;
+}
+
+// Robust SpeechSynthesis utterance for Chrome. Calls `onDone` exactly once,
+// no matter what — including when Chrome silently swallows onend.
+function speakUtterance(
+  text: string,
+  stoppedRef: React.RefObject<boolean>,
+  onDone: () => void,
+) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    onDone();
+    return;
+  }
+  const synth = window.speechSynthesis;
+
+  let done = false;
+  const finalize = () => {
+    if (done) return;
+    done = true;
+    if (!stoppedRef.current) onDone();
+  };
+
+  function fire() {
+    if (stoppedRef.current) {
+      finalize();
+      return;
+    }
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-US";
+    u.rate = 0.95;
+    u.pitch = 1.05;
+    u.volume = 1.0;
+
+    const voices = synth.getVoices();
+    const en =
+      voices.find((v) => /samantha|google us english natural/i.test(v.name)) ??
+      voices.find(
+        (v) => v.default && v.lang?.toLowerCase().startsWith("en"),
+      ) ??
+      voices.find((v) => v.lang?.toLowerCase().startsWith("en")) ??
+      voices[0];
+    if (en) u.voice = en;
+
+    u.onend = finalize;
+    u.onerror = finalize;
+
+    synth.speak(u);
+
+    // Safety timer: Chrome occasionally never fires onend. Force-advance
+    // after an estimated read-aloud duration.
+    const wordsPerSec = 2.5; // ~150 wpm at rate 0.95
+    const wordCount = Math.max(1, text.trim().split(/\s+/).length);
+    const expectedMs = (wordCount / wordsPerSec) * 1000;
+    setTimeout(finalize, expectedMs + 4000);
+  }
+
+  // Voices load async on Chrome. If they're not ready, the first speak()
+  // is silently dropped. Wait for them (with a short fallback).
+  if (synth.getVoices().length === 0) {
+    const onVoicesChanged = () => {
+      synth.removeEventListener("voiceschanged", onVoicesChanged);
+      fire();
+    };
+    synth.addEventListener("voiceschanged", onVoicesChanged);
+    setTimeout(() => {
+      synth.removeEventListener("voiceschanged", onVoicesChanged);
+      if (!done) fire();
+    }, 400);
+  } else {
+    fire();
+  }
 }
 
 function PlayIcon() {
