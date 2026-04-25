@@ -16,7 +16,7 @@ together they're inevitable.
 
 ## The problem
 
-Family stories disappear at the rate of one funeral at a time. There is no friction-free way for a grandmother in Ithaca to leave her spaghetti recipe — in her own voice, in her own words — for a grandchild who is not yet old enough to ask for it. Existing tools require typing, cloud accounts, or a tech-fluent relative standing over your shoulder. Living Legacy requires none of those things.
+Family stories disappear through out time. There is no friction-free way for a grandmother in Ithaca to leave her spaghetti recipe — in her own voice, in her own words — for a grandchild who is not yet old enough to ask for it. Existing tools require typing, cloud accounts, or a tech-fluent relative standing over your shoulder. Living Legacy requires none of those things.
 
 ---
 
