@@ -297,6 +297,24 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     if (!audience) return;
     setStep("saving");
     const blob = recorder.blob ?? new Blob([], { type: "audio/webm" });
+
+    // Build the transcript from the live Q&A. Whisper upgrades the answer
+    // strings in `answers` already, so this captures the highest-quality
+    // text we have at save time. If no transcript was captured at all
+    // (e.g. STT denied + no Whisper), the transcript will be empty and
+    // the listen page renders an explanatory placeholder.
+    const exchanges = buildExchanges(questions, answers);
+    const transcript = exchanges.map((e, i) => ({
+      speaker: e.speaker,
+      text: e.text,
+      startMs: i * 1000,
+      endMs: (i + 1) * 1000,
+    }));
+    const rawTranscript = answers
+      .map((a) => (a || "").trim())
+      .filter(Boolean)
+      .join("\n\n");
+
     await finalizeMemo({
       memoId,
       familyId: family!.id,
@@ -306,8 +324,8 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       audience,
       topic,
       recorderAudioBlob: blob,
-      transcript: [],
-      rawTranscript: "",
+      transcript,
+      rawTranscript,
       pullQuotes: [],
       categories: [],
       aboutSubjectIds: isDemoCandidate ? [SEED_SUBJECT_IDS.nani] : [],

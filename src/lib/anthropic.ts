@@ -32,6 +32,8 @@ Behavior:
 - Closing question is always: "Is there anything you want me to know that I didn't think to ask?" Use this only on the final turn.
 - Then thank them by name.
 
+LANGUAGE: Standard, neutral American English ONLY. The Recipient does not speak Hindi, Telugu, Tamil, Spanish, Tagalog, or any other language and does not use ethnic terms of endearment. NEVER use words like "beta", "kanna", "kanmani", "putta", "ammu", "ji", "amma", "appa", "didi", "bhai", "mijo", "mija", "bubbeleh", "habibi", "love", "darling", "sweetheart", "honey", "dear", or any other endearment. Do not use Indian English, British English, or AAVE inflections. Do not insert non-English words. Address the Recorder by their first name only when needed; otherwise speak in plain "you". Keep the register warm but unaccented and culturally neutral.
+
 Output format per turn: just the spoken question. No preamble. No markdown. No quotes. One question. Then stop.`;
 
 // Deterministic local fallbacks that vary by turn index AND topic so the user

@@ -46,7 +46,6 @@ export default function ListenPage({
   const viewer = currentSubjectId ? subjectFor(family, currentSubjectId) : undefined;
   const recorder = subjectFor(family, memo.recorderSubjectId);
   const canPlay = viewer ? canMemberPlayMemo(viewer, memo, family) : false;
-  const folio = String(memo.id.replace(/[^0-9]/g, "").slice(-3) || "01").padStart(2, "0");
 
   return (
     <main className="relative z-10 mx-auto min-h-screen w-full max-w-[1280px] px-md pb-2xl sm:px-xl">
@@ -81,7 +80,6 @@ export default function ListenPage({
           recorderName={recorder?.displayName ?? "Someone"}
           recorderPhoto={recorder?.photoUrl}
           deceased={recorder?.status === "deceased"}
-          folio={folio}
           canPlay={canPlay}
           family={family}
           viewer={viewer ?? null}
@@ -123,7 +121,15 @@ export default function ListenPage({
           <section className="mt-2xl">
             <p className="type-metadata text-blush-deep">In their own words</p>
             <div className="mt-md">
-              <VerbatimTranscript blocks={memo.transcript} />
+              {memo.transcript.length > 0 ? (
+                <VerbatimTranscript blocks={memo.transcript} />
+              ) : (
+                <p className="type-body text-ink-tertiary">
+                  No transcript was captured for this memo. New recordings
+                  will include a written transcript automatically once
+                  speech-to-text is configured.
+                </p>
+              )}
             </div>
           </section>
 
@@ -146,7 +152,6 @@ function Bookplate({
   recorderName,
   recorderPhoto,
   deceased,
-  folio,
   canPlay,
   family,
   viewer,
@@ -155,7 +160,6 @@ function Bookplate({
   recorderName: string;
   recorderPhoto?: string;
   deceased: boolean;
-  folio: string;
   canPlay: boolean;
   family: import("@/lib/types").Family;
   viewer: import("@/lib/types").Subject | null;
@@ -163,13 +167,6 @@ function Bookplate({
   return (
     <aside className="lg:sticky lg:top-md lg:self-start">
       <div className="relative overflow-hidden rounded-2xl border border-divider/40 bg-surface px-lg py-xl shadow-[0_24px_60px_-30px_rgba(31,27,22,0.18)] sm:px-xl sm:py-2xl">
-        <span
-          aria-hidden
-          className="type-folio absolute -right-2 -top-4 select-none text-foliage-deep/10"
-        >
-          {folio}
-        </span>
-
         <p className="type-metadata text-blush-deep">A memo</p>
         <p className="type-display-m mt-sm italic text-foliage-deep">
           {recorderName}

@@ -38,12 +38,20 @@ export default function FamilyHomePage() {
         ) : (
           <span />
         )}
-        <Link
-          href="/family/record"
-          className="inline-flex min-h-[40px] items-center rounded-full bg-tertiary px-lg py-1.5 text-on-tertiary transition-colors hover:bg-accent"
-        >
-          + new memo
-        </Link>
+        <span className="flex items-center gap-3">
+          <Link
+            href="/family/add-member"
+            className="inline-flex min-h-[40px] items-center rounded-full border border-primary/30 px-lg py-1.5 text-primary transition-colors hover:bg-surface-elevated"
+          >
+            + add member
+          </Link>
+          <Link
+            href="/family/record"
+            className="inline-flex min-h-[40px] items-center rounded-full bg-tertiary px-lg py-1.5 text-on-tertiary transition-colors hover:bg-accent"
+          >
+            + new memo
+          </Link>
+        </span>
       </nav>
 
       <FamilyTree
@@ -51,14 +59,6 @@ export default function FamilyHomePage() {
         memos={memos}
         currentSubjectId={currentSubjectId}
       />
-
-      <p
-        className="rise mx-auto mt-2xl max-w-md text-center type-metadata text-ink-tertiary"
-        style={{ animationDelay: "240ms" }}
-      >
-        Tap a portrait to open their page. A small red mark means a new memo
-        is waiting for you.
-      </p>
 
       <CategoryRail memos={memos} />
     </main>
