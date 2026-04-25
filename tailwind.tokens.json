@@ -1,0 +1,168 @@
+{
+  "theme": {
+    "extend": {
+      "colors": {
+        "primary": "#1f1b16",
+        "secondary": "#3d362e",
+        "tertiary": "#9c5862",
+        "accent": "#7b3f47",
+        "neutral": "#f5efe5",
+        "surface": "#faf3e2",
+        "surface-elevated": "#fffaec",
+        "divider": "#c8b7a0",
+        "ink-tertiary": "#56493a",
+        "on-primary": "#f5efe5",
+        "on-tertiary": "#fffaec",
+        "record": "#9c5862",
+        "memorial-overlay": "#a89b8a",
+        "foliage-deep": "#3a4f2c",
+        "foliage-light": "#9da98c",
+        "bark": "#9c8975",
+        "sage-plate": "#c8d0b7",
+        "blush-plate": "#f0dad6",
+        "blush-deep": "#8b4a55"
+      },
+      "fontFamily": {
+        "display-xl": [
+          "Source Serif Pro"
+        ],
+        "display-l": [
+          "Source Serif Pro"
+        ],
+        "display-m": [
+          "Source Serif Pro"
+        ],
+        "topic": [
+          "Source Serif Pro"
+        ],
+        "transcript": [
+          "Source Serif Pro"
+        ],
+        "pullquote": [
+          "Source Serif Pro"
+        ],
+        "body": [
+          "Source Serif Pro"
+        ],
+        "ui-md": [
+          "Public Sans"
+        ],
+        "ui-sm": [
+          "Public Sans"
+        ],
+        "metadata": [
+          "Public Sans"
+        ],
+        "ornamental-title": [
+          "Source Serif Pro"
+        ],
+        "member-name-tree": [
+          "Source Serif Pro"
+        ],
+        "member-dates": [
+          "Source Serif Pro"
+        ]
+      },
+      "fontSize": {
+        "display-xl": [
+          "3.5rem",
+          {
+            "letterSpacing": "-0.01em",
+            "fontWeight": "600"
+          }
+        ],
+        "display-l": [
+          "2.5rem",
+          {
+            "letterSpacing": "-0.005em",
+            "fontWeight": "600"
+          }
+        ],
+        "display-m": [
+          "1.5rem",
+          {
+            "fontWeight": "600"
+          }
+        ],
+        "topic": [
+          "2rem",
+          {
+            "letterSpacing": "-0.005em",
+            "fontWeight": "400"
+          }
+        ],
+        "transcript": [
+          "1.125rem",
+          {
+            "fontWeight": "400"
+          }
+        ],
+        "pullquote": [
+          "1.5rem",
+          {
+            "fontWeight": "400"
+          }
+        ],
+        "body": [
+          "1rem",
+          {
+            "fontWeight": "400"
+          }
+        ],
+        "ui-md": [
+          "0.9375rem",
+          {
+            "fontWeight": "500"
+          }
+        ],
+        "ui-sm": [
+          "0.8125rem",
+          {
+            "fontWeight": "500"
+          }
+        ],
+        "metadata": [
+          "0.75rem",
+          {
+            "letterSpacing": "0.06em",
+            "fontWeight": "500"
+          }
+        ],
+        "ornamental-title": [
+          "2.25rem",
+          {
+            "letterSpacing": "0.18em",
+            "fontWeight": "600"
+          }
+        ],
+        "member-name-tree": [
+          "1.125rem",
+          {
+            "fontWeight": "600"
+          }
+        ],
+        "member-dates": [
+          "0.875rem",
+          {
+            "letterSpacing": "0.04em",
+            "fontWeight": "400"
+          }
+        ]
+      },
+      "borderRadius": {
+        "sm": "4px",
+        "md": "8px",
+        "lg": "16px",
+        "full": "9999px"
+      },
+      "spacing": {
+        "xs": "4px",
+        "sm": "8px",
+        "md": "16px",
+        "lg": "24px",
+        "xl": "40px",
+        "2xl": "64px"
+      }
+    }
+  }
+}
