@@ -13,8 +13,7 @@ import { interviewTurn } from "@/lib/anthropic";
 import { narrate, type NarrateStatus } from "@/lib/elevenlabs";
 import { transcribeAudio } from "@/lib/whisper";
 import { finalizeMemo } from "@/lib/render";
-import { isDemoMode, DEMO_MEMO_ID, DEMO_QUESTIONS } from "@/lib/demo";
-import { SEED_SUBJECT_IDS } from "@/lib/seed";
+import { DEMO_QUESTIONS } from "@/lib/demo";
 import { getMemo } from "@/lib/storage";
 import { subjectFor, type AudienceRule, type Subject } from "@/lib/types";
 import { v4 as randomId } from "@/lib/uuid";
@@ -150,13 +149,12 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     .filter((s) => s.id !== me.id && family.members.some((m) => m.subjectId === s.id))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-  const isDemoCandidate =
-    isDemoMode() &&
-    me.id === SEED_SUBJECT_IDS.ma &&
-    recipientIds.length === 1 &&
-    recipientIds[0] === SEED_SUBJECT_IDS.aanya;
-
-  const memoId = isDemoCandidate ? DEMO_MEMO_ID : `memo-${randomId()}`;
+  // Every recording is a real, fresh memo driven by the LLM. The seeded
+  // DEMO_MEMO_ID is only used to look up the *pre-rendered* demo memo for
+  // playback (see lib/demo.ts) — never as the target of a new recording.
+  // Without this, Mom→Emma sessions would silently fall back to the four
+  // hardcoded "spaghetti" questions and cycle every four turns.
+  const memoId = `memo-${randomId()}`;
 
   function buildExchanges(
     qs: string[],
@@ -328,7 +326,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       rawTranscript,
       pullQuotes: [],
       categories: [],
-      aboutSubjectIds: isDemoCandidate ? [SEED_SUBJECT_IDS.nani] : [],
+      aboutSubjectIds: [],
       durationSeconds: Math.round(recorder.durationMs / 1000),
       parentMemoId,
     });
@@ -397,7 +395,6 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       {step === "listen-back" && (
         <ListenBackStep
           recorderBlob={recorder.blob}
-          isDemo={isDemoCandidate}
           onContinue={continueToAudience}
         />
       )}
@@ -817,11 +814,9 @@ function AudienceStep({
 
 function ListenBackStep({
   recorderBlob,
-  isDemo,
   onContinue,
 }: {
   recorderBlob: Blob | null;
-  isDemo: boolean;
   onContinue: () => void;
 }) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -829,9 +824,7 @@ function ListenBackStep({
 
   useEffect(() => {
     let revoke: string | null = null;
-    if (isDemo) {
-      setAudioUrl(null);
-    } else if (recorderBlob && recorderBlob.size > 0) {
+    if (recorderBlob && recorderBlob.size > 0) {
       const url = URL.createObjectURL(recorderBlob);
       revoke = url;
       setAudioUrl(url);
@@ -839,7 +832,7 @@ function ListenBackStep({
     return () => {
       if (revoke) URL.revokeObjectURL(revoke);
     };
-  }, [recorderBlob, isDemo]);
+  }, [recorderBlob]);
 
   return (
     <div className="mt-2xl flex flex-col items-center gap-lg crossfade text-center">
@@ -860,9 +853,7 @@ function ListenBackStep({
         />
       ) : (
         <p className="type-metadata text-ink-tertiary">
-          {isDemo
-            ? "(Demo — preview will play the recipient's stitched version after save.)"
-            : "No audio captured. You can still save and re-record later."}
+          No audio captured. You can still save and re-record later.
         </p>
       )}
 
