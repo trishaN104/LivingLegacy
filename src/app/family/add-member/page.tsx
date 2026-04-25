@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useFamily } from "@/hooks/useFamily";
+import { useProfile } from "@/hooks/useProfile";
 import { appendEvents } from "@/lib/storage";
 import type { Member, Subject, TreeEdge } from "@/lib/types";
 import type { FamilyEvent } from "@/lib/events";
@@ -48,6 +49,7 @@ function emptyDraft(generation: number): Draft {
 export default function AddMemberPage() {
   const router = useRouter();
   const { family, loading } = useFamily();
+  const { currentSubjectId } = useProfile();
   const [draft, setDraft] = useState<Draft>(() => emptyDraft(2));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +66,24 @@ export default function AddMemberPage() {
     new Set(family.subjects.map((s) => s.generation ?? 1)),
   ).sort((a, b) => a - b);
   const maxGen = generations.length ? generations[generations.length - 1] : 1;
+
+  // Determine the current user's generation so we can label generation
+  // options relative to their position in the tree.
+  const currentSubject = currentSubjectId
+    ? family.subjects.find((s) => s.id === currentSubjectId)
+    : null;
+  const userGen = currentSubject?.generation ?? maxGen;
+
+  function genLabel(g: number): string {
+    const offset = g - userGen;
+    if (offset <= -3) return " · great-grandparents";
+    if (offset === -2) return " · grandparents";
+    if (offset === -1) return " · parents";
+    if (offset === 0) return " · you / siblings";
+    if (offset === 1) return " · children";
+    if (offset === 2) return " · grandchildren";
+    return " · great-grandchildren";
+  }
 
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -234,18 +254,13 @@ export default function AddMemberPage() {
                 value={draft.generation}
                 onChange={(e) => update("generation", Number(e.target.value))}
               >
-                {[0, 1, 2, 3, 4].map((g) => (
+                {Array.from(
+                  { length: Math.max(maxGen + 2, 5) },
+                  (_, g) => g,
+                ).map((g) => (
                   <option key={g} value={g}>
                     Gen {g}
-                    {g === 0
-                      ? " · grandparents"
-                      : g === 1
-                        ? " · parents"
-                        : g === 2
-                          ? " · you / siblings"
-                          : g === 3
-                            ? " · children"
-                            : " · grandchildren"}
+                    {genLabel(g)}
                     {g === maxGen ? " (newest)" : ""}
                   </option>
                 ))}
