@@ -19,7 +19,7 @@ const publicSans = Public_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Kin — your family, on the record",
+  title: "Living Legacy — your family, on the record",
   description:
     "A shared family voice archive. Claude conducts the interview; the family keeps the conversation.",
 };

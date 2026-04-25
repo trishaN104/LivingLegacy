@@ -11,7 +11,6 @@ import { VerbatimTranscript } from "@/components/memo/VerbatimTranscript";
 import { VerbatimPullquote } from "@/components/memo/VerbatimPullquote";
 import { DownloadMemoButton } from "@/components/memo/DownloadMemoButton";
 import { subjectFor, type Memo } from "@/lib/types";
-import { DEMO_FAMILY_ID } from "@/lib/seed";
 
 export default function ListenPage({
   params,
@@ -19,7 +18,7 @@ export default function ListenPage({
   params: Promise<{ memoId: string }>;
 }) {
   const { memoId } = use(params);
-  const { family, loading } = useFamily(DEMO_FAMILY_ID);
+  const { family, loading } = useFamily();
   const { currentSubjectId } = useProfile();
   const [memo, setMemo] = useState<Memo | null>(null);
 

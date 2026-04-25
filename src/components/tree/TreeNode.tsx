@@ -29,7 +29,7 @@ export function TreeNode({
     variant === "memorial" ? "text-ink-tertiary" : "text-foliage-deep";
 
   const inner = (
-    <div className="flex w-[140px] flex-col items-center text-center crossfade">
+    <div className="flex w-[150px] flex-col items-center text-center crossfade">
       <div className="relative">
         <TreePortraitOval
           src={subject.photoUrl}
@@ -39,18 +39,18 @@ export function TreeNode({
         {hasNewMemo && (
           <span
             aria-label="New memo waiting"
-            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-tertiary text-[10px] font-semibold text-on-tertiary"
+            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-tertiary text-[10px] font-semibold text-on-tertiary shadow-[0_1px_0_rgba(0,0,0,0.1)]"
           >
             ●
           </span>
         )}
       </div>
       <div
-        className={`mt-2 rounded-md px-3 py-1.5 ${plateClass} shadow-[0_1px_0_rgba(0,0,0,0.04)]`}
-        style={{ minWidth: 110 }}
+        className={`mt-3 rounded-md px-3 py-2 ${plateClass} shadow-[0_1px_0_rgba(0,0,0,0.06)]`}
+        style={{ minWidth: 120 }}
       >
-        <div className={`type-tree-name ${nameClass}`}>{subject.displayName}</div>
-        <div className={`type-tree-dates mt-0.5 ${nameClass}`} style={{ opacity: 0.85 }}>
+        <div className={`type-tree-name ${nameClass} leading-tight`}>{subject.displayName}</div>
+        <div className={`type-tree-dates mt-0.5 ${nameClass}`} style={{ opacity: 0.8 }}>
           {formatDates(subject)}
         </div>
       </div>

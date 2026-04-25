@@ -1,4 +1,4 @@
-# Kin
+# Living Legacy
 
 A shared family voice archive. Each family member gets a profile inside one shared account; Claude conducts an interview in the recipient's voice on the recorder's end and renders it back in the recorder's voice on the recipient's end. Every memo is auto-categorized into themes (Recipes, Childhood, Stories about [Person], …) so the archive becomes browsable by person and by theme. The whole app is operable by voice for elders.
 
@@ -14,13 +14,34 @@ together they're inevitable.
 ## 60-second quickstart
 
 ```bash
-git clone <this repo> kin && cd kin
+git clone <this repo> living-legacy && cd living-legacy
 npm install
 cp .env.local.example .env.local      # demo mode is enabled by default
 npm run dev                           # http://localhost:3000
 ```
 
-Open `http://localhost:3000`, click **Open a family**, pick **Ma**, and walk the §13 demo.
+Open `http://localhost:3000`, click **Open the family**, pick **Ma**, and walk the §13 demo.
+
+## Adding API keys
+
+Demo mode runs fully offline — you don't need any keys to walk the seeded
+"Ma → Aanya, spaghetti recipe" memo. To record fresh memos you need keys
+from three providers:
+
+```bash
+# .env.local (project root)
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+ELEVENLABS_API_KEY=...
+
+# Set these to false (or remove them) to run with live providers:
+KIN_DEMO_MODE=true
+NEXT_PUBLIC_KIN_DEMO_MODE=true
+```
+
+Restart the dev server after editing `.env.local`. The home page has an
+"API keys" panel that tells you which keys the server can see; the panel
+never displays the values themselves.
 
 ---
 

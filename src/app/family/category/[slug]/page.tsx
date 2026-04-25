@@ -8,7 +8,6 @@ import { listMemos } from "@/lib/storage";
 import { memosVisibleTo } from "@/lib/privacy";
 import { subjectFor, type Memo } from "@/lib/types";
 import { MemoCard } from "@/components/profile/MemoCard";
-import { DEMO_FAMILY_ID } from "@/lib/seed";
 
 export default function CategoryPage({
   params,
@@ -16,7 +15,7 @@ export default function CategoryPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
-  const { family, loading } = useFamily(DEMO_FAMILY_ID);
+  const { family, loading } = useFamily();
   const { currentSubjectId } = useProfile();
   const [memos, setMemos] = useState<Memo[]>([]);
 

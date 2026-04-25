@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { playMemo } from "@/lib/privacy";
-import { loadAudioBlob } from "@/lib/audio-loader";
+import { isPlaceholderAudio, loadAudioBlob } from "@/lib/audio-loader";
 import type { Family, Memo, Subject } from "@/lib/types";
 import { log } from "@/lib/log";
 
@@ -12,6 +12,11 @@ import { log } from "@/lib/log";
 //
 // CRITICAL: Audio access goes through playMemo() in lib/privacy.ts. This
 // component MUST NOT read memo.audioBlobKey directly.
+//
+// When the underlying asset is missing (the seeded demo mp3 isn't staged),
+// the loader returns a valid silent WAV. We detect that and fall back to
+// reading the transcript via the browser's SpeechSynthesis API so the demo
+// still communicates content rather than playing one second of silence.
 
 export function PlayButtonLarge({
   memo,
@@ -26,6 +31,7 @@ export function PlayButtonLarge({
   const [playing, setPlaying] = useState(false);
   const [errored, setErrored] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [usePlaceholderTts, setUsePlaceholderTts] = useState(false);
 
   useEffect(() => {
     let revoke: string | null = null;
@@ -36,6 +42,11 @@ export function PlayButtonLarge({
           loadAudioBlob(family.id, key),
         );
         if (cancelled) return;
+        if (isPlaceholderAudio(blob)) {
+          setUsePlaceholderTts(true);
+          setAudioUrl(null);
+          return;
+        }
         const url = URL.createObjectURL(blob);
         revoke = url;
         setAudioUrl(url);
@@ -50,7 +61,16 @@ export function PlayButtonLarge({
     };
   }, [memo, family, viewer]);
 
-  function toggle() {
+  // Stop any in-flight TTS when this component unmounts or the memo changes.
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [memo.id]);
+
+  function toggleAudio() {
     const a = audioRef.current;
     if (!a) return;
     if (playing) {
@@ -62,13 +82,60 @@ export function PlayButtonLarge({
     }
   }
 
+  function toggleTts() {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setErrored(true);
+      return;
+    }
+    const synth = window.speechSynthesis;
+    if (playing) {
+      synth.cancel();
+      setPlaying(false);
+      return;
+    }
+    synth.cancel();
+    setPlaying(true);
+
+    const blocks = memo.transcript.length
+      ? memo.transcript
+      : [
+          {
+            speaker: "recorder" as const,
+            text: memo.rawTranscript || memo.topic,
+            startMs: 0,
+            endMs: 0,
+          },
+        ];
+
+    let i = 0;
+    function speakNext() {
+      if (i >= blocks.length) {
+        setPlaying(false);
+        return;
+      }
+      const b = blocks[i++];
+      const u = new SpeechSynthesisUtterance(b.text);
+      u.rate = b.speaker === "interviewer" ? 0.95 : 0.92;
+      u.pitch = b.speaker === "interviewer" ? 1.08 : 0.96;
+      u.onend = speakNext;
+      u.onerror = () => {
+        setPlaying(false);
+      };
+      synth.speak(u);
+    }
+    speakNext();
+  }
+
+  const onClick = usePlaceholderTts ? toggleTts : toggleAudio;
+  const disabled = errored || (!audioUrl && !usePlaceholderTts);
+
   return (
     <div className="flex flex-col items-center gap-md">
       <button
         type="button"
-        onClick={toggle}
-        disabled={!audioUrl || errored}
-        className="flex h-20 w-20 items-center justify-center rounded-full bg-primary text-on-primary shadow-md transition-transform hover:-translate-y-0.5 hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed"
+        onClick={onClick}
+        disabled={disabled}
+        className="flex h-24 w-24 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg transition-transform hover:-translate-y-0.5 hover:bg-secondary disabled:opacity-30 disabled:cursor-not-allowed"
         aria-label={playing ? "Pause" : "Play"}
       >
         {playing ? <PauseIcon /> : <PlayIcon />}
@@ -85,9 +152,20 @@ export function PlayButtonLarge({
           preload="auto"
         />
       )}
+
+      {usePlaceholderTts && (
+        <p className="type-metadata text-ink-tertiary text-center reading-width">
+          Recorded audio isn't staged — playing the transcript with the
+          browser's voice. Drop a real mp3 into{" "}
+          <code className="rounded-sm bg-surface-elevated px-1">
+            public/seed/demo-memo/
+          </code>{" "}
+          to hear it in the recorder's voice.
+        </p>
+      )}
       {errored && (
-        <p className="type-metadata text-ink-tertiary">
-          The audio file isn't staged yet — check public/seed/demo-memo/.
+        <p className="type-metadata text-ink-tertiary text-center">
+          Audio playback isn't available in this browser.
         </p>
       )}
     </div>
@@ -96,7 +174,7 @@ export function PlayButtonLarge({
 
 function PlayIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden>
+    <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden>
       <path d="M7 5l12 7-12 7V5z" fill="currentColor" />
     </svg>
   );
@@ -104,7 +182,7 @@ function PlayIcon() {
 
 function PauseIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden>
+    <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden>
       <rect x="6" y="5" width="4" height="14" fill="currentColor" />
       <rect x="14" y="5" width="4" height="14" fill="currentColor" />
     </svg>

@@ -4,13 +4,12 @@ import { useRouter } from "next/navigation";
 import { useFamily } from "@/hooks/useFamily";
 import { useProfile } from "@/hooks/useProfile";
 import { TreePortraitOval } from "@/components/tree/TreePortraitOval";
-import { DEMO_FAMILY_ID } from "@/lib/seed";
 
 // Netflix-style profile picker. Members only — deceased subjects without app
 // access aren't picker options. Selection is sticky per device.
 export default function ProfilesPage() {
   const router = useRouter();
-  const { family, loading } = useFamily(DEMO_FAMILY_ID);
+  const { family, loading } = useFamily();
   const { setCurrentSubjectId } = useProfile();
 
   if (loading || !family) {

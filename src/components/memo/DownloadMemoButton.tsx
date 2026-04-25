@@ -107,7 +107,7 @@ function buildTranscriptText(memo: Memo, family: Family): string {
 function buildReadme(memo: Memo, family: Family): string {
   const recorderName = subjectFor(family, memo.recorderSubjectId)?.displayName ?? "Recorder";
   return [
-    "Kin — a family voice archive",
+    "Living Legacy — a family voice archive",
     "",
     `Topic:      ${memo.topic}`,
     `Recorder:   ${recorderName}`,

@@ -12,16 +12,27 @@ import { interviewTurn } from "@/lib/anthropic";
 import { narrate } from "@/lib/elevenlabs";
 import { finalizeMemo } from "@/lib/render";
 import { isDemoMode, DEMO_MEMO_ID, DEMO_QUESTIONS } from "@/lib/demo";
-import { DEMO_FAMILY_ID, SEED_SUBJECT_IDS } from "@/lib/seed";
+import { SEED_SUBJECT_IDS } from "@/lib/seed";
 import { getMemo } from "@/lib/storage";
 import { subjectFor, type AudienceRule, type Subject } from "@/lib/types";
 import { v4 as randomId } from "@/lib/uuid";
 
 type Step = "recipient" | "topic" | "interview" | "listen-back" | "audience" | "saving";
 
+// Big-button styling for every action in the recording flow. Elders use this
+// flow on tablets — touch targets must be unmissable, never thinner than ~56px.
+const PRIMARY_BTN =
+  "min-h-[64px] min-w-[160px] rounded-lg bg-primary px-xl py-md type-ui-md text-on-primary shadow-md transition-colors hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed";
+const SECONDARY_BTN =
+  "min-h-[64px] min-w-[140px] rounded-lg bg-surface-elevated px-lg py-md type-ui-md text-primary transition-colors hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed";
+const FOLIAGE_BTN =
+  "min-h-[64px] min-w-[160px] rounded-lg bg-foliage-deep px-xl py-md type-ui-md text-on-primary shadow-md transition-colors hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed";
+const ACCENT_BTN =
+  "min-h-[64px] min-w-[160px] rounded-full bg-tertiary px-xl py-md type-ui-md text-on-tertiary shadow-md transition-colors hover:bg-accent";
+
 export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}) {
   const router = useRouter();
-  const { family } = useFamily(DEMO_FAMILY_ID);
+  const { family } = useFamily();
   const { currentSubjectId } = useProfile();
   const recorder = useMediaRecorder();
 
@@ -35,6 +46,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
   const [parentRecorderName, setParentRecorderName] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
   const [tabWasBackgrounded, setTabWasBackgrounded] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   // M.3 — flag if the tab was backgrounded mid-recording so we can warn calmly.
   useEffect(() => {
@@ -47,16 +59,14 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [recorder.state]);
 
-  // Mic permission denial surfaces as recorder.state === "denied".
   useEffect(() => {
     if (recorder.state === "denied") {
       setMicError(
-        "Microphone permission was denied. Allow it in your browser settings, then come back and try again.",
+        "Microphone permission was denied. Allow it in your browser's site settings, then come back and try again.",
       );
     }
   }, [recorder.state]);
 
-  // Reply: pre-fill recipient as the original memo's recorder, link parentMemoId.
   useEffect(() => {
     if (!replyToMemoId || !family) return;
     let cancelled = false;
@@ -74,10 +84,28 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     };
   }, [replyToMemoId, family]);
 
-  if (!family || !currentSubjectId) {
+  if (!family) {
     return (
       <main className="relative z-10 flex min-h-screen items-center justify-center">
         <p className="type-metadata text-ink-tertiary">loading…</p>
+      </main>
+    );
+  }
+
+  if (!currentSubjectId) {
+    return (
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-md text-center">
+        <p className="type-metadata text-blush-deep">No profile picked yet</p>
+        <h1 className="type-display-l mt-2 text-foliage-deep">Whose voice is this?</h1>
+        <p className="type-body mt-md text-secondary">
+          Pick the family member you are before you start a memo.
+        </p>
+        <Link
+          href="/family/profiles"
+          className={`mt-xl ${PRIMARY_BTN} inline-flex items-center justify-center`}
+        >
+          Choose a profile
+        </Link>
       </main>
     );
   }
@@ -90,7 +118,6 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     .filter((s) => s.id !== me.id && family.members.some((m) => m.subjectId === s.id))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-  // Demo path: Ma → Aanya → spaghetti recipe.
   const isDemoCandidate =
     isDemoMode() &&
     me.id === SEED_SUBJECT_IDS.ma &&
@@ -100,37 +127,59 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
   const memoId = isDemoCandidate ? DEMO_MEMO_ID : `memo-${randomId()}`;
 
   async function startInterview() {
+    if (starting) return;
+    setStarting(true);
+    setMicError(null);
     setStep("interview");
     setTurnIndex(0);
-    setMicError(null);
-    const q = await interviewTurn({
-      memoId,
-      topic,
-      recipientName: recipientName(),
-      recorderName: me!.displayName,
-      rollingSummary: "",
-      lastExchanges: [],
-      turnIndex: 0,
-    });
-    setQuestions([q]);
-    void narrate(q);
+
+    // Kick off the mic permission request immediately — don't wait on the
+    // interviewer LLM, that just makes the user think the button is dead.
     void recorder.start();
+
+    try {
+      const q = await interviewTurn({
+        memoId,
+        topic,
+        recipientName: recipientName(),
+        recorderName: me!.displayName,
+        rollingSummary: "",
+        lastExchanges: [],
+        turnIndex: 0,
+      });
+      setQuestions([q]);
+      void narrate(q);
+    } catch {
+      const fallback = DEMO_QUESTIONS[0] ?? "Tell me about it.";
+      setQuestions([fallback]);
+      void narrate(fallback);
+    } finally {
+      setStarting(false);
+    }
   }
 
   async function nextTurn() {
     const i = turnIndex + 1;
     setTurnIndex(i);
-    const q = await interviewTurn({
-      memoId,
-      topic,
-      recipientName: recipientName(),
-      recorderName: me!.displayName,
-      rollingSummary: "",
-      lastExchanges: [],
-      turnIndex: i,
-    });
-    setQuestions((prev) => [...prev, q]);
-    void narrate(q);
+    try {
+      const q = await interviewTurn({
+        memoId,
+        topic,
+        recipientName: recipientName(),
+        recorderName: me!.displayName,
+        rollingSummary: "",
+        lastExchanges: [],
+        turnIndex: i,
+      });
+      setQuestions((prev) => [...prev, q]);
+      void narrate(q);
+    } catch {
+      const fallback =
+        DEMO_QUESTIONS[i] ??
+        "Is there anything you want me to know that I didn't think to ask?";
+      setQuestions((prev) => [...prev, fallback]);
+      void narrate(fallback);
+    }
   }
 
   async function wrapUp() {
@@ -160,7 +209,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       audience,
       topic,
       recorderAudioBlob: blob,
-      transcript: [], // demo path overrides via buildDemoMemo()
+      transcript: [],
       rawTranscript: "",
       pullQuotes: [],
       categories: [],
@@ -202,6 +251,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
           onTopicChange={setTopic}
           onContinue={startInterview}
           onBack={() => setStep("recipient")}
+          starting={starting}
         />
       )}
 
@@ -218,6 +268,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
           onResume={recorder.resume}
           onNextTurn={nextTurn}
           onWrapUp={wrapUp}
+          onRetryMic={() => void recorder.start()}
         />
       )}
 
@@ -245,7 +296,6 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
   );
 }
 
-
 function RecipientStep({
   subjects,
   selected,
@@ -264,33 +314,42 @@ function RecipientStep({
     <div className="mt-xl crossfade">
       <h1 className="type-display-l text-foliage-deep">Who is this memo for?</h1>
       <p className="type-body mt-sm text-secondary">Pick one person, or several.</p>
-      <div className="mt-lg flex flex-wrap gap-lg">
-        {subjects.map((s) => {
-          const isSelected = selected.includes(s.id);
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => toggle(s.id)}
-              className={`flex flex-col items-center gap-sm rounded-md p-2 transition-all ${
-                isSelected ? "bg-sage-plate ring-2 ring-foliage-deep" : "hover:bg-surface"
-              }`}
-            >
-              <TreePortraitOval src={s.photoUrl} alt={s.displayName} size="sm" />
-              <div
-                className={`type-tree-name ${isSelected ? "text-foliage-deep" : "text-primary"}`}
+      {subjects.length === 0 ? (
+        <div className="mt-xl rounded-lg bg-surface p-lg">
+          <p className="type-body text-secondary">
+            There's no one else in this family yet. Add another member from
+            onboarding so you have someone to send a memo to.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-lg flex flex-wrap gap-lg">
+          {subjects.map((s) => {
+            const isSelected = selected.includes(s.id);
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => toggle(s.id)}
+                className={`flex flex-col items-center gap-sm rounded-md p-3 transition-all ${
+                  isSelected ? "bg-sage-plate ring-2 ring-foliage-deep" : "hover:bg-surface"
+                }`}
               >
-                {s.displayName}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+                <TreePortraitOval src={s.photoUrl} alt={s.displayName} size="sm" />
+                <div
+                  className={`type-tree-name ${isSelected ? "text-foliage-deep" : "text-primary"}`}
+                >
+                  {s.displayName}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <button
         type="button"
         disabled={selected.length === 0}
         onClick={onContinue}
-        className="mt-xl rounded-md bg-primary px-lg py-md type-ui-md text-on-primary transition-colors hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+        className={`mt-xl ${PRIMARY_BTN}`}
       >
         Continue
       </button>
@@ -305,6 +364,7 @@ function TopicStep({
   onTopicChange,
   onContinue,
   onBack,
+  starting,
 }: {
   recipientName: string;
   replyingToName: string | null;
@@ -312,7 +372,9 @@ function TopicStep({
   onTopicChange: (t: string) => void;
   onContinue: () => void;
   onBack: () => void;
+  starting: boolean;
 }) {
+  const valid = topic.trim().length >= 3;
   return (
     <div className="mt-xl crossfade">
       <p className="type-metadata text-blush-deep">
@@ -328,21 +390,27 @@ function TopicStep({
         autoFocus
         className="mt-lg w-full rounded-lg border border-divider/60 bg-surface-elevated p-md type-topic text-primary placeholder:text-ink-tertiary/60 focus:outline-none focus:ring-2 focus:ring-foliage-deep"
       />
-      <div className="mt-lg flex gap-md">
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded-md bg-surface-elevated px-lg py-md type-ui-md text-primary hover:bg-surface"
-        >
+      {!valid && (
+        <p className="mt-sm type-metadata text-ink-tertiary">
+          Type a few words about your memo — three letters or more — and the
+          Begin button will light up.
+        </p>
+      )}
+      <p className="mt-md type-metadata text-ink-tertiary">
+        Pressing <strong>Begin</strong> asks for microphone permission. Allow
+        it once and your browser will remember.
+      </p>
+      <div className="mt-lg flex flex-wrap gap-md">
+        <button type="button" onClick={onBack} className={SECONDARY_BTN}>
           Back
         </button>
         <button
           type="button"
-          disabled={topic.trim().length < 3}
+          disabled={!valid || starting}
           onClick={onContinue}
-          className="rounded-md bg-primary px-lg py-md type-ui-md text-on-primary hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed"
+          className={FOLIAGE_BTN}
         >
-          Begin
+          {starting ? "Starting…" : "Begin recording"}
         </button>
       </div>
     </div>
@@ -361,6 +429,7 @@ function InterviewStep({
   onResume,
   onNextTurn,
   onWrapUp,
+  onRetryMic,
 }: {
   recipientName: string;
   questions: string[];
@@ -373,12 +442,18 @@ function InterviewStep({
   onResume: () => void;
   onNextTurn: () => void;
   onWrapUp: () => void;
+  onRetryMic: () => void;
 }) {
-  const currentQ = questions[turnIndex] ?? "...";
+  const currentQ = questions[turnIndex] ?? (recorderState === "requesting"
+    ? "Asking your browser for the microphone…"
+    : "Loading the first question…");
   const lastQuestion = turnIndex >= DEMO_QUESTIONS.length - 1;
+
   return (
     <div className="mt-xl flex flex-col items-center gap-xl crossfade text-center">
-      <p className="type-metadata text-blush-deep">{recipientName} is asking, in {recipientName}'s voice through Kin</p>
+      <p className="type-metadata text-blush-deep">
+        {recipientName} is asking, in their voice through Living Legacy
+      </p>
 
       <div className="rounded-lg border border-divider/40 bg-surface px-lg py-xl shadow-[0_2px_0_rgba(0,0,0,0.04)]">
         <p className="type-topic reading-width text-primary">{currentQ}</p>
@@ -387,7 +462,12 @@ function InterviewStep({
       <RecordIndicator active={recorderState === "recording"} />
 
       {micError ? (
-        <p className="type-body text-blush-deep reading-width">{micError}</p>
+        <div className="flex flex-col items-center gap-md">
+          <p className="type-body text-blush-deep reading-width">{micError}</p>
+          <button type="button" onClick={onRetryMic} className={SECONDARY_BTN}>
+            Try the microphone again
+          </button>
+        </div>
       ) : (
         <p className="type-metadata text-ink-tertiary">
           {formatDuration(durationMs)} · question {turnIndex + 1}
@@ -401,40 +481,24 @@ function InterviewStep({
         </p>
       )}
 
-      <div className="flex gap-md">
+      <div className="flex flex-wrap justify-center gap-md">
         {recorderState === "recording" && (
-          <button
-            type="button"
-            onClick={onPause}
-            className="rounded-md bg-surface-elevated px-lg py-md type-ui-md text-primary hover:bg-surface"
-          >
+          <button type="button" onClick={onPause} className={SECONDARY_BTN}>
             Pause
           </button>
         )}
         {recorderState === "paused" && (
-          <button
-            type="button"
-            onClick={onResume}
-            className="rounded-md bg-surface-elevated px-lg py-md type-ui-md text-primary hover:bg-surface"
-          >
+          <button type="button" onClick={onResume} className={FOLIAGE_BTN}>
             Resume
           </button>
         )}
         {!lastQuestion && (
-          <button
-            type="button"
-            onClick={onNextTurn}
-            className="rounded-md bg-foliage-deep px-lg py-md type-ui-md text-on-primary hover:bg-secondary"
-          >
+          <button type="button" onClick={onNextTurn} className={FOLIAGE_BTN}>
             Next question
           </button>
         )}
-        <button
-          type="button"
-          onClick={onWrapUp}
-          className="rounded-full bg-tertiary px-lg py-md type-ui-md text-on-tertiary hover:bg-accent"
-        >
-          I'm done
+        <button type="button" onClick={onWrapUp} className={ACCENT_BTN}>
+          I&apos;m done
         </button>
       </div>
     </div>
@@ -481,7 +545,7 @@ function AudienceStep({
         <button
           type="button"
           onClick={() => onAudienceChange({ kind: "everyone" })}
-          className={`rounded-full px-lg py-md type-ui-md transition-colors ${
+          className={`min-h-[56px] rounded-full px-xl py-md type-ui-md transition-colors ${
             isEveryone
               ? "bg-foliage-deep text-on-primary"
               : "bg-surface-elevated text-primary hover:bg-surface"
@@ -502,7 +566,7 @@ function AudienceStep({
                 id={`aud-${s.id}`}
                 checked={checked}
                 onChange={() => togglePerson(s.id)}
-                className="h-5 w-5 accent-foliage-deep"
+                className="h-6 w-6 accent-foliage-deep"
               />
               <label htmlFor={`aud-${s.id}`} className="flex items-center gap-sm">
                 <span className="type-ui-md text-primary">{s.displayName}</span>
@@ -515,19 +579,11 @@ function AudienceStep({
         })}
       </ul>
 
-      <div className="mt-xl flex gap-md">
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded-md bg-surface-elevated px-lg py-md type-ui-md text-primary hover:bg-surface"
-        >
+      <div className="mt-xl flex flex-wrap gap-md">
+        <button type="button" onClick={onBack} className={SECONDARY_BTN}>
           Back
         </button>
-        <button
-          type="button"
-          onClick={onSave}
-          className="rounded-md bg-primary px-lg py-md type-ui-md text-on-primary hover:bg-secondary"
-        >
+        <button type="button" onClick={onSave} className={PRIMARY_BTN}>
           Save
         </button>
       </div>
@@ -550,8 +606,6 @@ function ListenBackStep({
   useEffect(() => {
     let revoke: string | null = null;
     if (isDemo) {
-      // Demo path: there's no meaningful local recording — the published memo
-      // uses the pre-rendered full playback. Skip preview audio.
       setAudioUrl(null);
     } else if (recorderBlob && recorderBlob.size > 0) {
       const url = URL.createObjectURL(recorderBlob);
@@ -587,15 +641,9 @@ function ListenBackStep({
         </p>
       )}
 
-      <div className="mt-md flex gap-md">
-        <button
-          type="button"
-          onClick={onContinue}
-          className="rounded-md bg-primary px-lg py-md type-ui-md text-on-primary hover:bg-secondary"
-        >
-          {playing ? "Continue when you're ready" : "Continue"}
-        </button>
-      </div>
+      <button type="button" onClick={onContinue} className={`mt-md ${PRIMARY_BTN}`}>
+        {playing ? "Continue when you're ready" : "Continue"}
+      </button>
     </div>
   );
 }

@@ -7,11 +7,10 @@ import { useProfile } from "@/hooks/useProfile";
 import { FamilyTree } from "@/components/tree/FamilyTree";
 import { CategoryRail } from "@/components/tree/CategoryRail";
 import { listMemos } from "@/lib/storage";
-import { DEMO_FAMILY_ID } from "@/lib/seed";
 import type { Memo } from "@/lib/types";
 
 export default function FamilyHomePage() {
-  const { family, loading } = useFamily(DEMO_FAMILY_ID);
+  const { family, loading } = useFamily();
   const { currentSubjectId } = useProfile();
   const [memos, setMemos] = useState<Memo[]>([]);
 

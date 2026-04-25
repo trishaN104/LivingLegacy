@@ -9,7 +9,6 @@ import { MemoCard } from "@/components/profile/MemoCard";
 import { listMemos } from "@/lib/storage";
 import { memosVisibleTo } from "@/lib/privacy";
 import { subjectFor } from "@/lib/types";
-import { DEMO_FAMILY_ID } from "@/lib/seed";
 import type { Memo } from "@/lib/types";
 
 type Tab = "memos" | "about" | "tree";
@@ -20,7 +19,7 @@ export default function ProfilePage({
   params: Promise<{ memberId: string }>;
 }) {
   const { memberId } = use(params);
-  const { family, loading } = useFamily(DEMO_FAMILY_ID);
+  const { family, loading } = useFamily();
   const { currentSubjectId } = useProfile();
   const [memos, setMemos] = useState<Memo[]>([]);
   const [tab, setTab] = useState<Tab>("memos");
