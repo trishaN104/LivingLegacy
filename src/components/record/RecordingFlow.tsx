@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFamily } from "@/hooks/useFamily";
 import { useProfile } from "@/hooks/useProfile";
 import { useMediaRecorder } from "@/hooks/useMediaRecorder";
@@ -44,6 +44,12 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
   const [turnIndex, setTurnIndex] = useState(0);
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
+  // Per-turn answer audio. answerBlobs[i] is what the recorder said in
+  // response to questions[i]. We accumulate it via recorder.snapshot() at
+  // each "Next question" / "I'm done" boundary so playback can interleave
+  // the question TTS in front of each answer instead of dumping a single
+  // gap-less mic recording.
+  const [answerBlobs, setAnswerBlobs] = useState<Blob[]>([]);
   const [audience, setAudience] = useState<AudienceRule | null>(null);
   const [parentMemoId, setParentMemoId] = useState<string | undefined>(undefined);
   const [parentRecorderName, setParentRecorderName] = useState<string | null>(null);
@@ -178,6 +184,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     setTurnIndex(0);
     setQuestions([]);
     setAnswers([]);
+    setAnswerBlobs([]);
 
     void recorder.start();
     if (stt.supported) stt.start();
@@ -240,6 +247,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     setAnswers(nextAnswers);
     setTurnIndex(i);
     whisperUpgradeAnswer(i - 1, audioPromise);
+    void rememberAnswerBlob(i - 1, audioPromise);
     try {
       const q = await interviewTurn({
         memoId,
@@ -279,7 +287,25 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       stt.stop();
     }
     whisperUpgradeAnswer(turnIndex, audioPromise);
+    void rememberAnswerBlob(turnIndex, audioPromise);
     setStep("listen-back");
+  }
+
+  // Resolve a per-turn snapshot and stash it at `index` so finalize() can
+  // persist it. Slots are sparse — if the snapshot fails we keep the slot
+  // empty rather than offsetting later turns.
+  async function rememberAnswerBlob(
+    index: number,
+    audioPromise: Promise<Blob | null>,
+  ) {
+    const blob = await audioPromise;
+    if (!blob || blob.size < 256) return;
+    setAnswerBlobs((prev) => {
+      const next = [...prev];
+      while (next.length <= index) next.push(new Blob([], { type: blob.type }));
+      next[index] = blob;
+      return next;
+    });
   }
 
   function continueToAudience() {
@@ -322,6 +348,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       audience,
       topic,
       recorderAudioBlob: blob,
+      answerAudioBlobs: answerBlobs,
       transcript,
       rawTranscript,
       pullQuotes: [],
@@ -819,8 +846,11 @@ function ListenBackStep({
   recorderBlob: Blob | null;
   onContinue: () => void;
 }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [durationMs, setDurationMs] = useState(0);
+  const [positionMs, setPositionMs] = useState(0);
 
   useEffect(() => {
     let revoke: string | null = null;
@@ -834,6 +864,23 @@ function ListenBackStep({
     };
   }, [recorderBlob]);
 
+  function toggle() {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) {
+      a.pause();
+    } else {
+      void a.play();
+    }
+  }
+
+  function restart() {
+    const a = audioRef.current;
+    if (!a) return;
+    a.currentTime = 0;
+    void a.play();
+  }
+
   return (
     <div className="mt-2xl flex flex-col items-center gap-lg crossfade text-center">
       <p className="type-metadata text-blush-deep">A pause before the next page</p>
@@ -843,14 +890,43 @@ function ListenBackStep({
       </p>
 
       {audioUrl ? (
-        <audio
-          src={audioUrl}
-          controls
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
-          className="w-full max-w-md"
-        />
+        <div className="mt-md flex flex-col items-center gap-md">
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={playing ? "Pause" : "Play"}
+            className="flex h-24 w-24 items-center justify-center rounded-full bg-foliage-deep text-on-primary shadow-lg transition-transform hover:-translate-y-0.5 hover:bg-secondary"
+          >
+            {playing ? <ListenPauseIcon /> : <ListenPlayIcon />}
+          </button>
+          <p className="type-metadata text-ink-tertiary tabular-nums">
+            {formatDuration(positionMs)}
+            {durationMs > 0 ? ` / ${formatDuration(durationMs)}` : ""}
+          </p>
+          <button
+            type="button"
+            onClick={restart}
+            className="type-metadata text-ink-tertiary underline-offset-4 hover:text-foliage-deep hover:underline"
+          >
+            Start from the beginning
+          </button>
+          <audio
+            ref={audioRef}
+            src={audioUrl}
+            preload="auto"
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => setPlaying(false)}
+            onTimeUpdate={(e) =>
+              setPositionMs(Math.round(e.currentTarget.currentTime * 1000))
+            }
+            onLoadedMetadata={(e) => {
+              const d = e.currentTarget.duration;
+              if (Number.isFinite(d)) setDurationMs(Math.round(d * 1000));
+            }}
+            className="hidden"
+          />
+        </div>
       ) : (
         <p className="type-metadata text-ink-tertiary">
           No audio captured. You can still save and re-record later.
@@ -861,6 +937,23 @@ function ListenBackStep({
         {playing ? "Continue when you're ready" : "Continue"}
       </button>
     </div>
+  );
+}
+
+function ListenPlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden>
+      <path d="M7 5l12 7-12 7V5z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ListenPauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden>
+      <rect x="6" y="5" width="4" height="14" fill="currentColor" />
+      <rect x="14" y="5" width="4" height="14" fill="currentColor" />
+    </svg>
   );
 }
 

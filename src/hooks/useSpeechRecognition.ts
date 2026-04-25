@@ -16,7 +16,12 @@ type SpeechRecognitionLike = {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
-  onresult: ((e: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
+  onresult:
+    | ((e: {
+        resultIndex: number;
+        results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+      }) => void)
+    | null;
   onerror: ((e: { error: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
@@ -56,9 +61,16 @@ export function useSpeechRecognition() {
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "en-US";
+    // The Web Speech API hands us the WHOLE results array on every event,
+    // not just the new chunk. `e.resultIndex` tells us where the new (or
+    // newly-changed) results start. If we ignore it and re-iterate from 0
+    // we re-append every finalized phrase on every event — which is what
+    // produced the "I went to Barbara last summer ..." transcript that
+    // repeated the same sentence 30+ times.
     rec.onresult = (e) => {
+      const startIdx = typeof e.resultIndex === "number" ? e.resultIndex : 0;
       let interim = "";
-      for (let i = 0; i < e.results.length; i++) {
+      for (let i = startIdx; i < e.results.length; i++) {
         const r = e.results[i];
         const text = r[0].transcript;
         if (r.isFinal) {
