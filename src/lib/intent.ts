@@ -66,7 +66,7 @@ export function fastPath(utterance: string, family: Family | null): Intent {
     };
   }
 
-  // Direct name match — "Aanya" alone implies "play the new one from Aanya"
+  // Direct name match — saying a member's name alone implies "play the new one from them"
   if (family) {
     for (const s of family.subjects) {
       if (u === s.displayName.toLowerCase() || u === s.fullName.toLowerCase()) {

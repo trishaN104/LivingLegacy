@@ -10,7 +10,7 @@ import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { TreePortraitOval } from "@/components/tree/TreePortraitOval";
 import { RecordIndicator } from "./RecordIndicator";
 import { interviewTurn } from "@/lib/anthropic";
-import { narrate } from "@/lib/elevenlabs";
+import { narrate, type NarrateStatus } from "@/lib/elevenlabs";
 import { transcribeAudio } from "@/lib/whisper";
 import { finalizeMemo } from "@/lib/render";
 import { isDemoMode, DEMO_MEMO_ID, DEMO_QUESTIONS } from "@/lib/demo";
@@ -57,6 +57,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
   // The key never reaches the client — we just learn whether the route is
   // wired up. Falls back to WebSpeech / no-op transparently when missing.
   const [openaiAvailable, setOpenaiAvailable] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<NarrateStatus | null>(null);
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/keys")
@@ -69,6 +70,15 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       cancelled = true;
     };
   }, []);
+
+  // Speak `text` and remember which voice we ended up using. The
+  // InterviewStep sidebar surfaces the status badge so the user can see
+  // immediately whether ElevenLabs is doing the talking or whether we fell
+  // back to the browser's robotic TTS (and why).
+  async function speak(text: string) {
+    const status = await narrate(text);
+    setVoiceStatus(status);
+  }
 
   // M.3 — flag if the tab was backgrounded mid-recording so we can warn calmly.
   useEffect(() => {
@@ -185,11 +195,11 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
         turnIndex: 0,
       });
       setQuestions([q]);
-      void narrate(q);
+      void speak(q);
     } catch {
       const fallback = DEMO_QUESTIONS[0] ?? "Tell me about it.";
       setQuestions([fallback]);
-      void narrate(fallback);
+      void speak(fallback);
     } finally {
       setStarting(false);
     }
@@ -244,13 +254,13 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       });
       const safeQ = ensureNotRepeat(q, questions);
       setQuestions((prev) => [...prev, safeQ]);
-      void narrate(safeQ);
+      void speak(safeQ);
     } catch {
       const fallback =
         DEMO_QUESTIONS[i] ??
         "Is there anything you want me to know that I didn't think to ask?";
       setQuestions((prev) => [...prev, fallback]);
-      void narrate(fallback);
+      void speak(fallback);
     }
   }
 
@@ -357,6 +367,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
           liveTranscript={stt.transcript}
           sttSupported={stt.supported}
           whisperEnabled={openaiAvailable}
+          voiceStatus={voiceStatus}
           onPause={recorder.pause}
           onResume={recorder.resume}
           onNextTurn={nextTurn}
@@ -551,6 +562,7 @@ function InterviewStep({
   liveTranscript,
   sttSupported,
   whisperEnabled,
+  voiceStatus,
   onPause,
   onResume,
   onNextTurn,
@@ -567,6 +579,7 @@ function InterviewStep({
   liveTranscript: string;
   sttSupported: boolean;
   whisperEnabled: boolean;
+  voiceStatus: NarrateStatus | null;
   onPause: () => void;
   onResume: () => void;
   onNextTurn: () => void;
@@ -633,34 +646,62 @@ function InterviewStep({
         </div>
       </div>
 
-      <aside className="hidden self-start rounded-lg border border-divider/40 bg-surface-elevated px-lg py-lg lg:block">
-        <div className="flex items-baseline justify-between gap-md">
-          <p className="type-metadata text-blush-deep">What I&apos;m hearing</p>
-          <p className="type-metadata text-ink-tertiary">
+      <aside className="hidden flex-col gap-lg self-start lg:flex">
+        <div className="rounded-lg border border-divider/40 bg-surface-elevated px-lg py-lg">
+          <div className="flex items-baseline justify-between gap-md">
+            <p className="type-metadata text-blush-deep">Voice</p>
+            <p className="type-metadata text-ink-tertiary">
+              {voiceStatus
+                ? voiceStatus.source === "elevenlabs"
+                  ? "ElevenLabs · live"
+                  : "Browser · fallback"
+                : "Waiting for first question…"}
+            </p>
+          </div>
+          <p className="mt-md type-body text-secondary">
+            {voiceStatus
+              ? voiceStatus.source === "elevenlabs"
+                ? `Speaking through ElevenLabs${voiceStatus.voice ? ` · voice ${voiceStatus.voice.slice(0, 6)}` : ""}.`
+                : `Browser TTS is filling in. Reason: ${voiceStatus.reason}.`
+              : "The interviewer's voice will speak the first question in a moment."}
+          </p>
+          {voiceStatus?.source === "browser" && (
+            <p className="mt-sm type-metadata text-ink-tertiary">
+              Add a working ELEVENLABS_API_KEY (and optionally an
+              ELEVENLABS_NARRATOR_VOICE_ID) to upgrade.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-divider/40 bg-surface-elevated px-lg py-lg">
+          <div className="flex items-baseline justify-between gap-md">
+            <p className="type-metadata text-blush-deep">What I&apos;m hearing</p>
+            <p className="type-metadata text-ink-tertiary">
+              {whisperEnabled
+                ? "Whisper · live"
+                : sttSupported
+                  ? "Browser · live"
+                  : "Browser · paused"}
+            </p>
+          </div>
+          {sttSupported ? (
+            <p className="mt-md min-h-[120px] type-body text-secondary">
+              {liveTranscript ||
+                "Speak — your words appear here so the next question can build on what you actually said."}
+            </p>
+          ) : (
+            <p className="mt-md type-body text-ink-tertiary">
+              Live transcription isn&apos;t supported in this browser. Open in
+              Chrome, Edge, or Safari and the next question will adapt to your
+              last answer in real time.
+            </p>
+          )}
+          <p className="mt-md type-metadata text-ink-tertiary">
             {whisperEnabled
-              ? "Whisper · live"
-              : sttSupported
-                ? "Browser · live"
-                : "Browser · paused"}
+              ? "Audio is also sent to OpenAI Whisper between turns for the cleanest transcript. The browser keeps the recording."
+              : "The transcript stays local to this browser. Add an OPENAI_API_KEY to upgrade to Whisper for higher accuracy."}
           </p>
         </div>
-        {sttSupported ? (
-          <p className="mt-md min-h-[120px] type-body text-secondary">
-            {liveTranscript ||
-              "Speak — your words appear here so the next question can build on what you actually said."}
-          </p>
-        ) : (
-          <p className="mt-md type-body text-ink-tertiary">
-            Live transcription isn&apos;t supported in this browser. Open in
-            Chrome, Edge, or Safari and the next question will adapt to your
-            last answer in real time.
-          </p>
-        )}
-        <p className="mt-md type-metadata text-ink-tertiary">
-          {whisperEnabled
-            ? "Audio is also sent to OpenAI Whisper between turns for the cleanest transcript. The browser keeps the recording."
-            : "The transcript stays local to this browser. Add an OPENAI_API_KEY to upgrade to Whisper for higher accuracy."}
-        </p>
       </aside>
     </div>
   );

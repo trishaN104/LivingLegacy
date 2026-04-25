@@ -4,17 +4,16 @@
 
 const WORDS = [
   "warm", "amber", "river", "cedar", "stone", "rose", "linen", "honey",
-  "summer", "winter", "marigold", "olive", "sage", "harvest", "willow",
+  "summer", "winter", "olive", "sage", "harvest", "willow",
   "garden", "kettle", "lantern", "meadow", "north", "south", "morning",
-  "twilight", "kitchen", "porch", "well", "hearth", "spice", "mango",
-  "jasmine", "saffron", "pomegranate", "apricot", "almond", "cardamom",
-  "tea", "cotton", "silk", "wool", "paper", "iron", "copper", "salt",
+  "twilight", "kitchen", "porch", "well", "hearth", "thyme",
+  "apple", "pear", "almond", "walnut", "maple", "birch",
+  "cotton", "linen", "wool", "paper", "iron", "copper", "salt",
   "bread", "bowl", "ladle", "spoon", "thread", "needle", "stitch",
-  "patch", "garden", "courtyard", "veranda", "balcony", "window",
-  "doorway", "thread", "memory", "letter", "story", "carol", "lullaby",
-  "blessing", "prayer", "harvest", "monsoon", "blossom", "petal", "rain",
-  "wind", "river", "valley", "hill", "field", "pasture", "orchard",
-  "kitchen", "table", "chair", "lamp", "candle", "ember", "spark",
+  "patch", "window", "doorway", "memory", "letter", "story", "lullaby",
+  "blessing", "blossom", "petal", "rain",
+  "wind", "valley", "hill", "field", "pasture", "orchard",
+  "table", "chair", "lamp", "candle", "ember", "spark", "ash", "frost",
 ];
 
 export function generateFamilyCode(): string {

@@ -46,18 +46,20 @@ export default function FamilyHomePage() {
         </Link>
       </nav>
 
-      <div className="rise mt-xl flex flex-col items-center gap-md text-center" style={{ animationDelay: "120ms" }}>
-        <p className="type-metadata text-blush-deep">Chapter II · The family tree</p>
-        <p className="type-metadata text-ink-tertiary">
-          Tap a portrait to read what they have on record. A red dot means a new memo is waiting for you.
-        </p>
-      </div>
-
       <FamilyTree
         family={family}
         memos={memos}
         currentSubjectId={currentSubjectId}
       />
+
+      <p
+        className="rise mx-auto mt-2xl max-w-md text-center type-metadata text-ink-tertiary"
+        style={{ animationDelay: "240ms" }}
+      >
+        Tap a portrait to open their page. A small red mark means a new memo
+        is waiting for you.
+      </p>
+
       <CategoryRail memos={memos} />
     </main>
   );

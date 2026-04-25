@@ -23,7 +23,7 @@ import { useProfile } from "@/hooks/useProfile";
 //   3. Generate a family code and write events into a fresh IndexedDB
 //
 // Also supports "Use the demo family" which resets back to the seeded
-// Madhunapantula family so the user can return to the §13 demo at any time.
+// Hartwell family so the user can return to the §13 demo at any time.
 
 type Draft = {
   displayName: string;
@@ -269,13 +269,13 @@ export default function OnboardingPage() {
                     label="Display name"
                     value={p.displayName}
                     onChange={(v) => updatePerson(i, { displayName: v })}
-                    placeholder="Ma"
+                    placeholder="Mom"
                   />
                   <Field
                     label="Full name"
                     value={p.fullName}
                     onChange={(v) => updatePerson(i, { fullName: v })}
-                    placeholder="Sudha Patel"
+                    placeholder="Margaret Hartwell"
                   />
                   <Field
                     label="Relationship"

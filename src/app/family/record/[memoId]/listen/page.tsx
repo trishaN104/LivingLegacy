@@ -215,7 +215,7 @@ function formatDate(iso: string): string {
   });
 }
 
-// "I want to tell Aanya the recipe for the spaghetti…" → "The recipe for the
+// "I want to tell Emma the recipe for the spaghetti…" → "The recipe for the
 // spaghetti…". Keeps the editorial title clean while preserving the original
 // utterance below if needed elsewhere.
 function prettyTopic(topic: string): string {

@@ -1,23 +1,28 @@
 // Server-side ElevenLabs proxy. Holds API key off the client.
 // kind: "narrate" | "render-question". Returns audio/mpeg bytes.
+//
+// Sets a custom response header `x-eleven-voice` so the client can show
+// which voice it's hearing. Errors are returned as JSON with detail.
 
 import { NextResponse } from "next/server";
 
-// Sarah — a warm, natural female narrator. ElevenLabs stock voice.
-// Override per environment with ELEVENLABS_NARRATOR_VOICE_ID; we leave a known
-// good ID baked in so the demo Just Works the first time.
+// Rachel — the most universally-available stock voice on ElevenLabs. Works
+// on every account tier including the free plan. Override per environment
+// with ELEVENLABS_NARRATOR_VOICE_ID; we leave a known good ID baked in so
+// the demo Just Works the first time.
 //
-// A couple of nice alternates if Sarah doesn't fit your family:
+// Other production-friendly stock voices:
+//   Sarah  — EXAVITQu4vr4xnSDxMAC  (warm, soft female)
 //   Aria   — 9BWtsMINqrJLrRacOk9x  (confident, rich narration)
-//   Rachel — 21m00Tcm4TlvDq8ikWAM  (calm, classic)
 //   Brian  — nPczCjzI2devNBz1zQrb  (deep, conversational male)
 //   Charlie — IKne3meq5aSn9XLyUdCD (relaxed casual male)
-const DEFAULT_NARRATOR_VOICE_ID = "EXAVITQu4vr4xnSDxMAC"; // Sarah
+const DEFAULT_NARRATOR_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel
 
-// Turbo v2.5 is the fastest premium model and works in 32 languages — great
-// for an interactive interviewer. Multilingual v2 is fuller but slower.
-const NARRATE_MODEL = "eleven_turbo_v2_5";
-const RENDER_MODEL = "eleven_multilingual_v2"; // memo questions get the higher-fidelity model
+// `eleven_multilingual_v2` is the universally-available premium model.
+// Turbo v2.5 is faster but not on every account tier — we keep the fallback
+// chain in narrate() so a 4xx on the first model swaps to multilingual.
+const NARRATE_MODEL = process.env.ELEVENLABS_NARRATE_MODEL || "eleven_multilingual_v2";
+const RENDER_MODEL = "eleven_multilingual_v2";
 
 export async function POST(req: Request) {
   const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -42,14 +47,14 @@ export async function POST(req: Request) {
 
   const isNarrate = kind !== "render-question";
 
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?optimize_streaming_latency=2&output_format=mp3_44100_128`;
-
   // Voice settings tuned for warm, grounded interviewer cadence. Stability
   // a touch lower than default keeps natural pitch variation; style nudges
   // the voice toward conversational delivery; speaker_boost adds presence.
   const voice_settings = isNarrate
-    ? { stability: 0.4, similarity_boost: 0.75, style: 0.45, use_speaker_boost: true }
+    ? { stability: 0.45, similarity_boost: 0.75, style: 0.35, use_speaker_boost: true }
     : { stability: 0.5, similarity_boost: 0.85, style: 0.3, use_speaker_boost: true };
+
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
 
   const res = await fetch(url, {
     method: "POST",
@@ -67,7 +72,13 @@ export async function POST(req: Request) {
 
   if (!res.ok) {
     const errText = await res.text();
-    return NextResponse.json({ error: errText }, { status: res.status });
+    // Surface upstream error verbatim so the user can debug from the
+    // network panel — most common: 401 (bad key), 404 (voice not on this
+    // account), 429 (quota exhausted).
+    return NextResponse.json(
+      { error: errText, status: res.status, voiceId, model: isNarrate ? NARRATE_MODEL : RENDER_MODEL },
+      { status: res.status },
+    );
   }
 
   const buf = await res.arrayBuffer();
@@ -76,6 +87,8 @@ export async function POST(req: Request) {
     headers: {
       "content-type": "audio/mpeg",
       "cache-control": "no-store",
+      "x-eleven-voice": voiceId,
+      "x-eleven-model": isNarrate ? NARRATE_MODEL : RENDER_MODEL,
     },
   });
 }

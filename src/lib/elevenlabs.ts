@@ -1,26 +1,33 @@
 // ElevenLabs wrapper.
 //
 // CRITICAL: SPEC §pitch and §9. Two distinct functions:
-//   - narrate()         — neutral "Kin" narrator voice. Used for ambient
-//                         prompts, app navigation, recorder-side question
-//                         playback during the interview (per Q1).
+//   - narrate()         — neutral narrator voice. Used for ambient prompts,
+//                         app navigation, recorder-side question playback
+//                         during the interview (per Q1).
 //   - renderQuestion()  — recorder's cloned voice. Used ONLY when rendering
 //                         memo question audio for recipient-side playback,
 //                         and ONLY in lib/render.ts (render-once-freeze).
 //
 // A family member's cloned voice telling you "your battery is low" would be
 // horrifying. The two functions are separate to make that mistake hard.
+//
+// narrate() returns a status object so the UI can show whether ElevenLabs
+// played, the browser fell back, or something errored. The InterviewStep
+// surfaces this — if you see "Voice: browser" you need a key, a voice your
+// account can use, or quota.
 
 "use client";
 
 import { isDemoMemo, isDemoMode } from "./demo";
 import { log } from "./log";
 
-// ─── browser SpeechSynthesis fallback ────────────────────────────────────────
-// Used only when ElevenLabs isn't reachable. Browser voices are robotic; the
-// app prefers ElevenLabs whenever the server has a key configured.
+export type NarrateStatus =
+  | { source: "elevenlabs"; voice?: string; model?: string }
+  | { source: "browser"; reason: string };
 
-function speakBrowser(text: string, voiceHint?: string): Promise<void> {
+// ─── browser SpeechSynthesis fallback ────────────────────────────────────────
+
+function speakBrowser(text: string): Promise<void> {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
     return Promise.resolve();
   }
@@ -28,13 +35,15 @@ function speakBrowser(text: string, voiceHint?: string): Promise<void> {
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate = 1.0;
     utter.pitch = 1.0;
-    if (voiceHint) {
-      const voices = window.speechSynthesis.getVoices();
-      const match =
-        voices.find((v) => v.name.toLowerCase().includes(voiceHint.toLowerCase())) ??
-        voices[0];
-      if (match) utter.voice = match;
-    }
+    const voices = window.speechSynthesis.getVoices();
+    // Prefer a higher-quality system voice when one is available. Apple's
+    // "Samantha" and Google's "Google US English" beat the bone-dry default.
+    const preferredHints = ["samantha", "karen", "google us english", "natural"];
+    const match =
+      voices.find((v) => preferredHints.some((h) => v.name.toLowerCase().includes(h))) ??
+      voices.find((v) => v.lang?.toLowerCase().startsWith("en")) ??
+      voices[0];
+    if (match) utter.voice = match;
     utter.onend = () => resolve();
     utter.onerror = () => resolve();
     window.speechSynthesis.speak(utter);
@@ -71,25 +80,42 @@ function stopCurrent() {
 
 // Speak in the neutral narrator voice. Used for ambient prompts and the
 // recorder-side interview (per Q1). Always neutral — never cloned.
-export async function narrate(text: string): Promise<void> {
-  if (typeof window === "undefined") return;
+//
+// Returns the source actually used so the UI can surface a status badge.
+export async function narrate(text: string): Promise<NarrateStatus> {
+  if (typeof window === "undefined") return { source: "browser", reason: "ssr" };
   stopCurrent();
-  // Try ElevenLabs first. The /api/elevenlabs route returns 503 when the
-  // server doesn't have ELEVENLABS_API_KEY — at which point we fall back to
-  // browser TTS so the recorder still hears the question.
   try {
     const res = await fetch("/api/elevenlabs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ kind: "narrate", text }),
     });
-    if (!res.ok) throw new Error(`narrate ${res.status}`);
+    if (!res.ok) {
+      // Try to extract the upstream error so the console explains why
+      // we're falling back. Most common: 503 (no key), 401 (bad key),
+      // 404 (voice not on this account), 429 (quota).
+      let detail = `narrate ${res.status}`;
+      try {
+        const j = await res.json();
+        if (j?.error) detail = `${res.status}: ${typeof j.error === "string" ? j.error : JSON.stringify(j.error)}`;
+      } catch {
+        // ignore
+      }
+      log.warn("elevenlabs", detail);
+      await speakBrowser(text);
+      return { source: "browser", reason: detail };
+    }
     const blob = await res.blob();
-    if (blob.size === 0) throw new Error("narrate empty body");
+    if (blob.size === 0) {
+      await speakBrowser(text);
+      return { source: "browser", reason: "empty body" };
+    }
+    const voice = res.headers.get("x-eleven-voice") ?? undefined;
+    const model = res.headers.get("x-eleven-model") ?? undefined;
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.preload = "auto";
-    audio.playbackRate = 1.05;
     currentNarration = { audio, url };
     audio.addEventListener("ended", () => {
       if (currentNarration?.audio === audio) {
@@ -97,10 +123,22 @@ export async function narrate(text: string): Promise<void> {
         currentNarration = null;
       }
     });
-    await audio.play();
+    try {
+      await audio.play();
+    } catch (err) {
+      // Autoplay can still be blocked in edge cases (e.g. tab not focused).
+      log.warn("elevenlabs", "audio.play() rejected", err);
+      await speakBrowser(text);
+      return { source: "browser", reason: "autoplay blocked" };
+    }
+    return { source: "elevenlabs", voice, model };
   } catch (err) {
-    log.warn("elevenlabs", "narrate fell back to browser TTS", err);
+    log.warn("elevenlabs", "narrate threw", err);
     await speakBrowser(text);
+    return {
+      source: "browser",
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -120,9 +158,6 @@ export async function renderQuestion(args: {
     return new Blob([new Uint8Array(0)], { type: "audio/mpeg" });
   }
   if (!args.voiceCloneId) {
-    // No clone — fall back to neutral narrator voice. Caller tags the memo
-    // with voiceUsedForQuestions: "kin-narrator" so playback labels it as
-    // "in a stand-in voice."
     return speakBrowserToBlob(args.text);
   }
   try {

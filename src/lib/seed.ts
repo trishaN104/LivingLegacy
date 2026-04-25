@@ -1,15 +1,18 @@
 // Demo seed family. PLAN §13 — the cast that maps onto the §13 ten-step demo.
 //
-// One ancestral row (Nani — deceased), two parents (Ma, Pa), two children
-// (Aanya, Rohan). The family code is fixed in demo mode so the URL is stable
-// across reloads.
+// One ancestral row (Grandma — deceased), two parents (Mom, Dad), two
+// children (Emma, Henry). The family code is fixed in demo mode so the URL
+// is stable across reloads.
 
 import type { Family, Member, Subject, TreeEdge } from "./types";
 import type { FamilyEvent } from "./events";
 
 export const DEMO_FAMILY_ID = "warm-river-cedar-stone-rose-amber";
-export const DEMO_FAMILY_NAME = "The Madhunapantula family";
+export const DEMO_FAMILY_NAME = "The Hartwell family";
 
+// Internal IDs are stable identifiers — only the human-facing names changed.
+// We keep the keys (nani/ma/pa/aanya/rohan) so persisted demo data and audio
+// asset paths still resolve. Anything user-visible was made neutral.
 export const SEED_SUBJECT_IDS = {
   nani: "subj-nani",
   ma: "subj-ma",
@@ -23,9 +26,9 @@ const ts = "2026-04-25T11:00:00.000Z";
 const subjects: Subject[] = [
   {
     id: SEED_SUBJECT_IDS.nani,
-    fullName: "Lakshmi Madhunapantula",
-    displayName: "Nani",
-    relationshipLabel: "Ma's mother (Nani)",
+    fullName: "Eleanor Hartwell",
+    displayName: "Grandma",
+    relationshipLabel: "Mom's mother",
     photoUrl: "/seed/portraits/nani.jpg",
     status: "deceased",
     birthYear: 1932,
@@ -35,8 +38,8 @@ const subjects: Subject[] = [
   },
   {
     id: SEED_SUBJECT_IDS.ma,
-    fullName: "Sudha Madhunapantula",
-    displayName: "Ma",
+    fullName: "Margaret Hartwell",
+    displayName: "Mom",
     relationshipLabel: "Mother",
     photoUrl: "/seed/portraits/ma.jpg",
     status: "alive",
@@ -46,8 +49,8 @@ const subjects: Subject[] = [
   },
   {
     id: SEED_SUBJECT_IDS.pa,
-    fullName: "Ravi Madhunapantula",
-    displayName: "Pa",
+    fullName: "Thomas Hartwell",
+    displayName: "Dad",
     relationshipLabel: "Father",
     photoUrl: "/seed/portraits/pa.jpg",
     status: "alive",
@@ -57,8 +60,8 @@ const subjects: Subject[] = [
   },
   {
     id: SEED_SUBJECT_IDS.aanya,
-    fullName: "Aanya Madhunapantula",
-    displayName: "Aanya",
+    fullName: "Emma Hartwell",
+    displayName: "Emma",
     relationshipLabel: "Daughter",
     photoUrl: "/seed/portraits/aanya.jpg",
     status: "alive",
@@ -68,8 +71,8 @@ const subjects: Subject[] = [
   },
   {
     id: SEED_SUBJECT_IDS.rohan,
-    fullName: "Rohan Madhunapantula",
-    displayName: "Rohan",
+    fullName: "Henry Hartwell",
+    displayName: "Henry",
     relationshipLabel: "Son",
     photoUrl: "/seed/portraits/rohan.jpg",
     status: "alive",
@@ -80,7 +83,7 @@ const subjects: Subject[] = [
 ];
 
 const members: Member[] = [
-  member(SEED_SUBJECT_IDS.ma, { voiceFirst: true }), // SPEC pitch: voice-first defaults on for elders, Ma is the demo's spoken-interface user
+  member(SEED_SUBJECT_IDS.ma, { voiceFirst: true }), // SPEC pitch: voice-first defaults on for elders, Mom is the demo's spoken-interface user
   member(SEED_SUBJECT_IDS.pa),
   member(SEED_SUBJECT_IDS.aanya),
   member(SEED_SUBJECT_IDS.rohan),

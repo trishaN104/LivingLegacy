@@ -2,8 +2,8 @@
 //
 // Subject ≠ Member. A Subject is a person in the tree (alive or deceased).
 // A Member is a Subject who has activated the app and can record memos.
-// Cross-filing onto "Stories about Nani" works against Subject regardless of
-// living status.
+// Cross-filing onto "Stories about Grandma" works against Subject regardless
+// of living status.
 
 export type AudienceRule =
   | { kind: "everyone" }
@@ -14,7 +14,7 @@ export type Subject = {
   id: string;
   fullName: string;
   displayName: string;
-  relationshipLabel: string; // "Ma", "Dadu", "Aanya's husband Rohan"
+  relationshipLabel: string; // "Mom", "Grandpa", "Emma's husband"
   photoUrl?: string;
   status: "alive" | "deceased";
   birthYear?: number;

@@ -104,12 +104,14 @@
     font-size: 5.5em;
     line-height: 0.85;
     margin: 0.05em 0.12em -0.05em 0;
-    color: var(--color-foliage-deep);
+    color: var(--color-primary);
     font-variation-settings: "SOFT" 50, "opsz" 144;
   }
 
-  /* Layered atmosphere behind the page — a warm vignette + blush + foliage
-     washes pulled in from the corners. Fixed so it does not scroll. */
+  /* Calm paper vignette behind the page. Neutral — no colored washes. The
+     ink corner darkens give the cream surface a printed-page feel without
+     pulling the palette in any particular cultural direction. Fixed so it
+     does not scroll. */
   .editorial-backdrop::before {
     content: "";
     position: fixed;
@@ -117,10 +119,10 @@
     pointer-events: none;
     z-index: 0;
     background:
-      radial-gradient(circle at 12% 10%, rgba(157, 169, 140, 0.22), transparent 38%),
-      radial-gradient(circle at 92% 8%,  rgba(240, 218, 214, 0.30), transparent 40%),
-      radial-gradient(circle at 50% 110%, rgba(58, 79, 44, 0.08), transparent 60%),
-      radial-gradient(ellipse at center, transparent 55%, rgba(31, 27, 22, 0.10) 100%);
+      radial-gradient(circle at 0% 0%,   rgba(31, 27, 22, 0.05), transparent 35%),
+      radial-gradient(circle at 100% 0%, rgba(31, 27, 22, 0.04), transparent 35%),
+      radial-gradient(circle at 50% 110%, rgba(31, 27, 22, 0.04), transparent 55%),
+      radial-gradient(ellipse at center, transparent 60%, rgba(31, 27, 22, 0.08) 100%);
   }
 
   /* Breathing record indicator (1.4s in/out, never blinks) */
