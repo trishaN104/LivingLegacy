@@ -7,7 +7,12 @@
 import type { Family, Member, Subject, TreeEdge } from "./types";
 import type { FamilyEvent } from "./events";
 
-export const DEMO_FAMILY_ID = "warm-river-cedar-stone-rose-amber";
+// Bumped 2026-04 when the seed cast was renamed to neutral defaults — old
+// browsers had the previous "Madhunapantula" family cached in IndexedDB, and
+// useFamily() only seeds if the *current* DEMO_FAMILY_ID isn't found. A new
+// id forces a fresh seed; the orphaned old family stays in IDB but is no
+// longer pointed at.
+export const DEMO_FAMILY_ID = "linen-cedar-meadow-stone-thyme-ember";
 export const DEMO_FAMILY_NAME = "The Hartwell family";
 
 // Internal IDs are stable identifiers — only the human-facing names changed.
