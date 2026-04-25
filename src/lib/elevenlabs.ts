@@ -16,9 +16,9 @@
 import { isDemoMemo, isDemoMode } from "./demo";
 import { log } from "./log";
 
-const KIN_NARRATOR_VOICE_ID = "kin-narrator-default"; // ElevenLabs preset
-
 // ─── browser SpeechSynthesis fallback ────────────────────────────────────────
+// Used only when ElevenLabs isn't reachable. Browser voices are robotic; the
+// app prefers ElevenLabs whenever the server has a key configured.
 
 function speakBrowser(text: string, voiceHint?: string): Promise<void> {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -26,7 +26,7 @@ function speakBrowser(text: string, voiceHint?: string): Promise<void> {
   }
   return new Promise((resolve) => {
     const utter = new SpeechSynthesisUtterance(text);
-    utter.rate = 0.95;
+    utter.rate = 1.0;
     utter.pitch = 1.0;
     if (voiceHint) {
       const voices = window.speechSynthesis.getVoices();
@@ -41,29 +41,63 @@ function speakBrowser(text: string, voiceHint?: string): Promise<void> {
   });
 }
 
+// ─── narration playback (single in-flight) ───────────────────────────────────
+// We keep a module-level handle on whatever audio is currently speaking so a
+// new question can interrupt the previous one cleanly — instead of stacking
+// up overlapping voices when the user clicks "Next question" quickly.
+
+let currentNarration: { audio: HTMLAudioElement; url: string } | null = null;
+
+function stopCurrent() {
+  if (currentNarration) {
+    try {
+      currentNarration.audio.pause();
+    } catch {
+      // ignore
+    }
+    URL.revokeObjectURL(currentNarration.url);
+    currentNarration = null;
+  }
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // ignore
+    }
+  }
+}
+
 // ─── public API ──────────────────────────────────────────────────────────────
 
 // Speak in the neutral narrator voice. Used for ambient prompts and the
 // recorder-side interview (per Q1). Always neutral — never cloned.
 export async function narrate(text: string): Promise<void> {
   if (typeof window === "undefined") return;
-  if (process.env.NEXT_PUBLIC_KIN_DEMO_MODE === "true" || !process.env.NEXT_PUBLIC_ELEVENLABS_AVAILABLE) {
-    return speakBrowser(text);
-  }
-  // Live path: hit /api/elevenlabs?kind=narrate, get audio bytes, play.
-  // Falls back to browser speech synthesis on failure.
+  stopCurrent();
+  // Try ElevenLabs first. The /api/elevenlabs route returns 503 when the
+  // server doesn't have ELEVENLABS_API_KEY — at which point we fall back to
+  // browser TTS so the recorder still hears the question.
   try {
     const res = await fetch("/api/elevenlabs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "narrate", voiceId: KIN_NARRATOR_VOICE_ID, text }),
+      body: JSON.stringify({ kind: "narrate", text }),
     });
     if (!res.ok) throw new Error(`narrate ${res.status}`);
     const blob = await res.blob();
+    if (blob.size === 0) throw new Error("narrate empty body");
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
+    audio.preload = "auto";
+    audio.playbackRate = 1.05;
+    currentNarration = { audio, url };
+    audio.addEventListener("ended", () => {
+      if (currentNarration?.audio === audio) {
+        URL.revokeObjectURL(url);
+        currentNarration = null;
+      }
+    });
     await audio.play();
-    audio.onended = () => URL.revokeObjectURL(url);
   } catch (err) {
     log.warn("elevenlabs", "narrate fell back to browser TTS", err);
     await speakBrowser(text);

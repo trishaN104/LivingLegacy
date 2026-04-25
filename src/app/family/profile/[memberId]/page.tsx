@@ -58,85 +58,113 @@ export default function ProfilePage({
     (m) => m.aboutSubjectIds.includes(subject.id) && m.recorderSubjectId !== subject.id,
   );
 
+  const dateline =
+    subject.birthYear && subject.deathYear
+      ? `${subject.birthYear} — ${subject.deathYear}`
+      : subject.birthYear
+        ? `${subject.birthYear} —`
+        : "";
+
   return (
-    <main className="relative z-10 mx-auto max-w-3xl px-md py-2xl">
-      <nav className="flex items-center justify-between type-metadata text-ink-tertiary">
+    <main className="relative z-10 mx-auto min-h-screen w-full max-w-[1280px] px-md pb-2xl sm:px-xl">
+      <nav className="rise flex items-center justify-between gap-md border-b border-divider/60 py-md type-metadata text-ink-tertiary">
         <Link href="/family" className="hover:text-foliage-deep">← family tree</Link>
+        <span className="hidden sm:inline">A profile</span>
+        <Link href="/family/record" className="hover:text-foliage-deep">+ new memo</Link>
       </nav>
 
-      <header className="mt-md flex flex-col items-center gap-md text-center sm:flex-row sm:items-end sm:text-left">
-        <TreePortraitOval
-          src={subject.photoUrl}
-          alt={subject.displayName}
-          memorial={subject.status === "deceased"}
-          size="md"
-        />
-        <div>
-          <p className="type-metadata text-blush-deep">
-            {subject.relationshipLabel}
-            {subject.status === "deceased" && " · in memory"}
-          </p>
-          <h1 className="type-display-xl mt-1 text-foliage-deep">{subject.displayName}</h1>
-          <p className="type-metadata text-ink-tertiary">
-            {subject.fullName}
-            {subject.birthYear &&
-              ` · ${subject.birthYear}${
-                subject.deathYear ? ` – ${subject.deathYear}` : " –"
-              }`}
-          </p>
-        </div>
-      </header>
-
-      <div className="mt-xl flex gap-md border-b border-divider/50">
-        {(["memos", "about", "tree"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`type-ui-md py-2 transition-colors ${
-              tab === t
-                ? "border-b-2 border-foliage-deep text-foliage-deep"
-                : "text-ink-tertiary hover:text-primary"
-            }`}
-            type="button"
-          >
-            {tab === t ? <strong>{label(t, memosByThem, memosAboutThem)}</strong> : label(t, memosByThem, memosAboutThem)}
-          </button>
-        ))}
-      </div>
-
-      <section className="mt-lg">
-        {tab === "memos" && (
-          <Stack>
-            {memosByThem.length === 0 && (
-              <p className="type-metadata text-ink-tertiary">
-                {subject.displayName} hasn't recorded a memo yet.
-              </p>
+      <article className="rise mt-xl grid gap-2xl lg:mt-2xl lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] lg:gap-3xl" style={{ animationDelay: "120ms" }}>
+        <aside className="lg:sticky lg:top-md lg:self-start">
+          <div className="rounded-2xl border border-divider/40 bg-surface px-lg py-xl shadow-[0_24px_60px_-30px_rgba(31,27,22,0.18)] sm:px-xl sm:py-2xl">
+            <p className="type-metadata text-blush-deep">
+              {subject.relationshipLabel}
+              {subject.status === "deceased" && " · in memory"}
+            </p>
+            <h1 className="type-display-l mt-sm text-foliage-deep">
+              {subject.displayName}
+            </h1>
+            {subject.fullName && subject.fullName !== subject.displayName && (
+              <p className="mt-1 type-body italic text-secondary">{subject.fullName}</p>
             )}
-            {memosByThem.map((m) => (
-              <MemoCard key={m.id} memo={m} family={family} />
-            ))}
-          </Stack>
-        )}
-        {tab === "about" && (
-          <Stack>
-            {memosAboutThem.length === 0 && (
-              <p className="type-metadata text-ink-tertiary">
-                Nothing has been recorded about {subject.displayName} yet.
-              </p>
+            {dateline && (
+              <p className="mt-sm type-metadata text-ink-tertiary">{dateline}</p>
             )}
-            {memosAboutThem.map((m) => (
-              <MemoCard key={m.id} memo={m} family={family} />
-            ))}
-          </Stack>
-        )}
-        {tab === "tree" && (
-          <p className="type-body text-secondary">
-            <Link href="/family" className="text-tertiary underline-offset-4 hover:underline">
-              See {subject.displayName}'s place in the family →
+
+            <div className="editorial-rule my-lg" />
+
+            <div className="flex justify-center">
+              <TreePortraitOval
+                src={subject.photoUrl}
+                alt={subject.displayName}
+                memorial={subject.status === "deceased"}
+                size="md"
+              />
+            </div>
+
+            <div className="editorial-rule my-lg" />
+
+            <Link
+              href="/family"
+              className="type-metadata block text-center text-tertiary underline-offset-4 transition-colors hover:text-accent hover:underline"
+            >
+              ← back to the family tree
             </Link>
-          </p>
-        )}
-      </section>
+          </div>
+        </aside>
+
+        <section>
+          <div className="flex flex-wrap gap-md border-b border-divider/50">
+            {(["memos", "about", "tree"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`type-ui-md min-h-[44px] px-md py-2 transition-colors ${
+                  tab === t
+                    ? "border-b-2 border-foliage-deep text-foliage-deep"
+                    : "text-ink-tertiary hover:text-primary"
+                }`}
+                type="button"
+              >
+                {label(t, memosByThem, memosAboutThem)}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-xl">
+            {tab === "memos" && (
+              <Stack>
+                {memosByThem.length === 0 && (
+                  <p className="type-body text-ink-tertiary reading-width">
+                    {subject.displayName} hasn&apos;t recorded a memo yet.
+                  </p>
+                )}
+                {memosByThem.map((m) => (
+                  <MemoCard key={m.id} memo={m} family={family} />
+                ))}
+              </Stack>
+            )}
+            {tab === "about" && (
+              <Stack>
+                {memosAboutThem.length === 0 && (
+                  <p className="type-body text-ink-tertiary reading-width">
+                    Nothing has been recorded about {subject.displayName} yet.
+                  </p>
+                )}
+                {memosAboutThem.map((m) => (
+                  <MemoCard key={m.id} memo={m} family={family} />
+                ))}
+              </Stack>
+            )}
+            {tab === "tree" && (
+              <p className="type-body text-secondary">
+                <Link href="/family" className="text-tertiary underline-offset-4 hover:underline">
+                  See {subject.displayName}&apos;s place in the family →
+                </Link>
+              </p>
+            )}
+          </div>
+        </section>
+      </article>
     </main>
   );
 }

@@ -39,22 +39,26 @@ export default function CategoryPage({
     filtered[0]?.categories.find((c) => c.slug === slug)?.label ?? humanize(slug);
 
   return (
-    <main className="relative z-10 mx-auto max-w-3xl px-md py-2xl">
-      <nav className="flex items-center justify-between type-metadata text-ink-tertiary">
+    <main className="relative z-10 mx-auto min-h-screen w-full max-w-[1280px] px-md pb-2xl sm:px-xl">
+      <nav className="rise flex items-center justify-between gap-md border-b border-divider/60 py-md type-metadata text-ink-tertiary">
         <Link href="/family" className="hover:text-foliage-deep">← family tree</Link>
+        <span className="hidden sm:inline">A section</span>
+        <span />
       </nav>
-      <header className="mt-md text-center">
-        <p className="type-metadata text-blush-deep">A category in {family.name}</p>
-        <h1 className="type-display-l mt-2 text-foliage-deep">{label}</h1>
-        <p className="type-metadata mt-1 text-ink-tertiary">{filtered.length} memos</p>
+      <header className="rise mt-2xl text-center" style={{ animationDelay: "120ms" }}>
+        <p className="type-metadata text-blush-deep">A section of {family.name}</p>
+        <h1 className="type-display-l mt-sm text-foliage-deep">{label}</h1>
+        <p className="type-metadata mt-md text-ink-tertiary">
+          {filtered.length} {filtered.length === 1 ? "memo" : "memos"}
+        </p>
       </header>
-      <section className="mt-2xl flex flex-col gap-md">
+      <section className="mx-auto mt-2xl grid max-w-3xl gap-md">
         {filtered.map((m) => (
           <MemoCard key={m.id} memo={m} family={family} />
         ))}
         {filtered.length === 0 && (
           <p className="type-body text-center text-secondary">
-            Nothing in this category yet.
+            Nothing in this section yet.
           </p>
         )}
       </section>

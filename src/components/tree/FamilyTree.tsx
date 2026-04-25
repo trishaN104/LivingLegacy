@@ -29,16 +29,17 @@ export function FamilyTree({ family, memos, currentSubjectId, surname }: Props) 
     surname ?? deriveSurname(family.name) ?? "Your family";
 
   return (
-    <section className="relative mx-auto w-full max-w-[980px] px-md pt-xl pb-2xl">
+    <section className="relative mx-auto mt-xl w-full max-w-[1180px] px-sm pt-xl pb-2xl sm:px-xl">
       <CornerOrnaments />
 
       <header className="relative z-10 text-center">
-        <h1 className="type-ornamental text-foliage-deep">{computedSurname}</h1>
-        <p className="type-metadata mt-1 text-blush-deep">FAMILY TREE</p>
-        <div className="mx-auto mt-3 flex items-center justify-center gap-2">
-          <span className="block h-px w-16 bg-divider" />
-          <span aria-hidden className="text-blush-deep">❀</span>
-          <span className="block h-px w-16 bg-divider" />
+        <span aria-hidden className="block h-px w-24 mx-auto bg-divider/80" />
+        <h1 className="type-ornamental mt-md text-foliage-deep">{computedSurname}</h1>
+        <p className="type-metadata mt-2 text-blush-deep">A family tree</p>
+        <div className="mx-auto mt-md flex items-center justify-center gap-md">
+          <span className="block h-px w-24 bg-divider" />
+          <span aria-hidden className="type-display-m italic text-blush-deep">est.</span>
+          <span className="block h-px w-24 bg-divider" />
         </div>
       </header>
 
@@ -51,7 +52,8 @@ export function FamilyTree({ family, memos, currentSubjectId, surname }: Props) 
       />
 
       <p className="type-pullquote mt-2xl text-center text-blush-deep">
-        Like branches on a tree, we all grow in different directions —{" "}
+        Like branches on a tree, we all grow in different directions &mdash;
+        <br className="hidden sm:block" />
         <em>yet our roots remain as one.</em>
       </p>
     </section>
@@ -138,7 +140,7 @@ function TreeBody({
   return (
     <div
       ref={containerRef}
-      className="relative mt-xl rounded-2xl bg-surface/60 px-md py-xl"
+      className="relative mt-xl overflow-hidden rounded-2xl border border-divider/40 bg-surface/70 px-md py-xl shadow-[0_2px_0_rgba(0,0,0,0.04),0_24px_60px_-30px_rgba(31,27,22,0.18)] sm:px-xl sm:py-2xl"
     >
       <PaintedBackdrop />
 
@@ -156,11 +158,12 @@ function TreeBody({
         </svg>
       )}
 
-      <div className="relative z-10 flex flex-col gap-2xl">
-        {generations.map((g) => (
+      <div className="relative z-10 flex flex-col gap-2xl lg:gap-3xl">
+        {generations.map((g, gi) => (
           <div
             key={g}
-            className="flex flex-wrap items-end justify-center gap-lg sm:gap-xl"
+            className="flex flex-wrap items-end justify-center gap-lg sm:gap-xl lg:gap-2xl rise"
+            style={{ animationDelay: `${gi * 110}ms` }}
           >
             {byGen[g].map((subject) => (
               <div

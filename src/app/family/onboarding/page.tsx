@@ -197,10 +197,10 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="relative z-10 mx-auto min-h-screen w-full max-w-2xl px-md py-2xl">
-      <nav className="flex items-center justify-between type-metadata text-ink-tertiary">
+    <main className="relative z-10 mx-auto min-h-screen w-full max-w-[1280px] px-md pb-2xl sm:px-xl">
+      <nav className="rise flex items-center justify-between gap-md border-b border-divider/60 py-md type-metadata text-ink-tertiary">
         <Link href="/" className="hover:text-foliage-deep">
-          ← back to start
+          ← back to the cover
         </Link>
         <button
           type="button"
@@ -211,16 +211,19 @@ export default function OnboardingPage() {
         </button>
       </nav>
 
-      <header className="mt-lg text-center">
-        <p className="type-metadata text-blush-deep">A new family</p>
-        <h1 className="type-display-l mt-2 text-foliage-deep">
-          Plant the tree.
-        </h1>
-        <p className="type-body mt-md text-secondary reading-width mx-auto">
-          One family lives in this app. Add the people you want to remember and
-          the people who will record memos. You can always come back and add
-          more.
-        </p>
+      <header className="rise mt-2xl flex flex-col items-baseline gap-md sm:flex-row sm:gap-xl" style={{ animationDelay: "120ms" }}>
+        <span className="type-numeral text-tertiary text-[3rem] leading-none">N°</span>
+        <div>
+          <p className="type-metadata text-blush-deep">A new family</p>
+          <h1 className="type-display-l mt-sm text-foliage-deep">
+            Plant the tree.
+          </h1>
+          <p className="type-body mt-md text-secondary reading-width">
+            One family lives in this app. Add the people you want to remember
+            and the people who will record memos. You can always come back and
+            add more.
+          </p>
+        </div>
       </header>
 
       {step === "name" && (
