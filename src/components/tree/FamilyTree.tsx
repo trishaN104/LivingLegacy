@@ -54,13 +54,21 @@ type Pt = { x: number; y: number };
 
 const NODE_DIAMETER = 88;
 const NODE_RADIUS = NODE_DIAMETER / 2;
-const ROW_GAP = 240;
+// Row gap is generous enough that a parent's label (which sits below the
+// circle) can never collide horizontally with the bus row routed between
+// generations. With LABEL_BLOCK_HEIGHT ~ 64px below the circle, a 280px
+// row gap leaves ~ 80px of clear vertical space for the bus + child drops
+// even at deep generations.
+const ROW_GAP = 280;
 const TOP_PADDING = 110;
 const LEFT_PADDING = 96;
 const RIGHT_PADDING = 60;
 const SPOUSE_GAP = 240;
 const SIBLING_GAP = 220;
-const NODE_LABEL_WIDTH = 200;
+// Narrower than the spacer between adjacent nodes (SPOUSE_GAP/SIBLING_GAP
+// minus circles) so a parent-couple's drop column lands cleanly between
+// the two parent labels rather than slicing through one of them.
+const NODE_LABEL_WIDTH = 160;
 const BOTTOM_PADDING = 140;
 
 export function FamilyTree({ family, memos, currentSubjectId, surname }: Props) {
@@ -467,8 +475,13 @@ function NodeCard({
         isViewer={isViewer}
         hasNewMemo={hasNewMemo}
       />
+      {/* The label sits on top of the edges-SVG (later in DOM order) and the
+          solid bg-surface acts as a visual eraser so vertical drops at this
+          column don't appear to slice through the name + dates. Without
+          this, a single-parent chain like Grandma → Mom shows the parent
+          edge passing through Grandma's own label. */}
       <div
-        className="absolute left-1/2 top-full mt-3 -translate-x-1/2 text-center"
+        className="absolute left-1/2 top-full mt-2 -translate-x-1/2 text-center bg-surface px-3 py-1 rounded-md"
         style={{ width: NODE_LABEL_WIDTH }}
       >
         <NodeLabel subject={subject} />

@@ -44,12 +44,19 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
   const [turnIndex, setTurnIndex] = useState(0);
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
-  // Per-turn answer audio. answerBlobs[i] is what the recorder said in
-  // response to questions[i]. We accumulate it via recorder.snapshot() at
-  // each "Next question" / "I'm done" boundary so playback can interleave
-  // the question TTS in front of each answer instead of dumping a single
-  // gap-less mic recording.
-  const [answerBlobs, setAnswerBlobs] = useState<Blob[]>([]);
+  // Elapsed recorder-time (ms) when the user finished each answer turn.
+  // We use ONE continuous mic recording — slicing a webm into per-turn
+  // blobs is not playable because only the first chunk has the init
+  // segment. So we record per-turn END timestamps and seek inside the
+  // single blob during playback.
+  //
+  //   turnBoundariesMs[i] = recorder.durationMs at the moment the user
+  //                         clicked "Next question" / "I'm done" for turn i.
+  //
+  // Recorder block i in the saved transcript then plays from
+  //   start = turnBoundariesMs[i-1] (or 0 for the first turn)
+  //   end   = turnBoundariesMs[i]
+  const [turnBoundariesMs, setTurnBoundariesMs] = useState<number[]>([]);
   const [audience, setAudience] = useState<AudienceRule | null>(null);
   const [parentMemoId, setParentMemoId] = useState<string | undefined>(undefined);
   const [parentRecorderName, setParentRecorderName] = useState<string | null>(null);
@@ -184,7 +191,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     setTurnIndex(0);
     setQuestions([]);
     setAnswers([]);
-    setAnswerBlobs([]);
+    setTurnBoundariesMs([]);
 
     void recorder.start();
     if (stt.supported) stt.start();
@@ -240,14 +247,19 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     // Don't await — we let Whisper upgrade the transcript in the background
     // while the next question is already being generated.
     const audioPromise = recorder.snapshot();
+    const boundaryMs = recorder.durationMs;
 
     const justSaid = stt.supported ? stt.drainAll() : "";
     const nextAnswers = [...answers];
     nextAnswers[i - 1] = justSaid;
     setAnswers(nextAnswers);
     setTurnIndex(i);
+    setTurnBoundariesMs((prev) => {
+      const next = [...prev];
+      next[i - 1] = boundaryMs;
+      return next;
+    });
     whisperUpgradeAnswer(i - 1, audioPromise);
-    void rememberAnswerBlob(i - 1, audioPromise);
     try {
       const q = await interviewTurn({
         memoId,
@@ -274,6 +286,7 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     // Capture the final answer's audio before we stop the recorder, otherwise
     // requestData() has nothing to flush.
     const audioPromise = recorder.snapshot();
+    const boundaryMs = recorder.durationMs;
     recorder.stop();
     if (stt.supported) {
       const finalSaid = stt.drainAll();
@@ -286,26 +299,13 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       }
       stt.stop();
     }
-    whisperUpgradeAnswer(turnIndex, audioPromise);
-    void rememberAnswerBlob(turnIndex, audioPromise);
-    setStep("listen-back");
-  }
-
-  // Resolve a per-turn snapshot and stash it at `index` so finalize() can
-  // persist it. Slots are sparse — if the snapshot fails we keep the slot
-  // empty rather than offsetting later turns.
-  async function rememberAnswerBlob(
-    index: number,
-    audioPromise: Promise<Blob | null>,
-  ) {
-    const blob = await audioPromise;
-    if (!blob || blob.size < 256) return;
-    setAnswerBlobs((prev) => {
+    setTurnBoundariesMs((prev) => {
       const next = [...prev];
-      while (next.length <= index) next.push(new Blob([], { type: blob.type }));
-      next[index] = blob;
+      next[turnIndex] = boundaryMs;
       return next;
     });
+    whisperUpgradeAnswer(turnIndex, audioPromise);
+    setStep("listen-back");
   }
 
   function continueToAudience() {
@@ -327,13 +327,23 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
     // text we have at save time. If no transcript was captured at all
     // (e.g. STT denied + no Whisper), the transcript will be empty and
     // the listen page renders an explanatory placeholder.
+    //
+    // Recorder blocks carry the real per-turn timestamps inside the single
+    // continuous mic blob, so playback can seek to the exact slice. Interviewer
+    // blocks have stub 0/0 — they don't have audio in the mic recording; the
+    // listen page synthesizes them with TTS.
     const exchanges = buildExchanges(questions, answers);
-    const transcript = exchanges.map((e, i) => ({
-      speaker: e.speaker,
-      text: e.text,
-      startMs: i * 1000,
-      endMs: (i + 1) * 1000,
-    }));
+    const totalMs = recorder.durationMs;
+    let recorderIdx = 0;
+    const transcript = exchanges.map((e) => {
+      if (e.speaker === "interviewer") {
+        return { speaker: e.speaker, text: e.text, startMs: 0, endMs: 0 };
+      }
+      const start = recorderIdx > 0 ? (turnBoundariesMs[recorderIdx - 1] ?? 0) : 0;
+      const end = turnBoundariesMs[recorderIdx] ?? totalMs;
+      recorderIdx++;
+      return { speaker: e.speaker, text: e.text, startMs: start, endMs: end };
+    });
     const rawTranscript = answers
       .map((a) => (a || "").trim())
       .filter(Boolean)
@@ -348,7 +358,6 @@ export function RecordingFlow({ replyToMemoId }: { replyToMemoId?: string } = {}
       audience,
       topic,
       recorderAudioBlob: blob,
-      answerAudioBlobs: answerBlobs,
       transcript,
       rawTranscript,
       pullQuotes: [],

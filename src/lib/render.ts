@@ -21,12 +21,11 @@ export interface FinalizeMemoInput {
   audience: import("./types").AudienceRule;
   topic: string;
   recorderAudioBlob: Blob;
-  // Per-turn slices of the recorder's mic input, indexed by question turn.
-  // answerAudioBlobs[i] is the answer to interviewerTurns[i]. When present,
-  // the listen page interleaves question[i] + answer[i] for true
-  // back-and-forth playback. When absent (older memos), playback falls back
-  // to the single `recorderAudioBlob`.
-  answerAudioBlobs?: Blob[];
+  // The recorder mic input is a single continuous webm blob — slicing it
+  // into per-turn blobs is not playable because only the first chunk has
+  // the init segment. Per-turn boundaries instead live on the transcript
+  // (TranscriptBlock.startMs / endMs for `recorder` blocks), and the listen
+  // page seeks within this single blob.
   transcript: TranscriptBlock[];
   rawTranscript: string;
   pullQuotes: string[];
@@ -64,33 +63,10 @@ export async function finalizeMemo(input: FinalizeMemoInput): Promise<Memo> {
     }
   }
 
-  // Single full-recording blob — the unbroken mic capture. Kept around as a
-  // fallback for the listen page (and as the file the user can download)
-  // when per-turn slices aren't usable.
+  // Single full-recording blob — the unbroken mic capture. The listen page
+  // uses transcript per-turn timestamps to seek inside this blob.
   const fullPlaybackKey = `full-${input.memoId}-${randomId()}`;
   await putAudioBlob(input.familyId, fullPlaybackKey, input.recorderAudioBlob);
-
-  // Persist per-turn answer audio so the listen page can interleave
-  // question[i] + answer[i]. Empty / missing slices are stored as empty
-  // strings to preserve index alignment with questionAudioBlobKeys.
-  const answerAudioBlobKeys: string[] = [];
-  if (input.answerAudioBlobs && input.answerAudioBlobs.length > 0) {
-    for (let i = 0; i < input.answerAudioBlobs.length; i++) {
-      const ans = input.answerAudioBlobs[i];
-      if (!ans || ans.size < 256) {
-        answerAudioBlobKeys.push("");
-        continue;
-      }
-      const key = `a-${input.memoId}-${i}-${randomId()}`;
-      try {
-        await putAudioBlob(input.familyId, key, ans);
-        answerAudioBlobKeys.push(key);
-      } catch (err) {
-        log.warn("render", `answer ${i} persist failed; will fall back`, err);
-        answerAudioBlobKeys.push("");
-      }
-    }
-  }
 
   const memo: Memo = {
     id: input.memoId,
@@ -100,7 +76,6 @@ export async function finalizeMemo(input: FinalizeMemoInput): Promise<Memo> {
     topic: input.topic,
     audioBlobKey: fullPlaybackKey,
     questionAudioBlobKeys,
-    answerAudioBlobKeys,
     durationSeconds: input.durationSeconds,
     createdAt: new Date().toISOString(),
     transcript: input.transcript,

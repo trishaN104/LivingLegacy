@@ -63,11 +63,6 @@ export type Memo = {
   topic: string;
   audioBlobKey: string; // IndexedDB key — final stitched recorder-voice blob
   questionAudioBlobKeys: string[]; // per-question rendered audio for playback
-  // Per-turn slices of the recorder's mic input, so playback can play
-  // question[i] → answer[i] → question[i+1] → answer[i+1]. Older memos
-  // recorded before this field existed will fall through to playing the
-  // single `audioBlobKey` blob continuously without interleaved questions.
-  answerAudioBlobKeys?: string[];
   durationSeconds: number;
   createdAt: string;
   transcript: TranscriptBlock[];
